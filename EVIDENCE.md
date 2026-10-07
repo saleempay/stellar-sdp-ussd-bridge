@@ -599,3 +599,19 @@ each receiver with its transaction hash and Success status),
 `docs/evidence/d4-payments.png` and `-2.png` (the payments list). The
 dashboard shows the recipients' synthetic numbers in full; they are test
 numbers in the sandbox convention and belong to no one.
+
+## 2026-10-07: Deliverable 4, part 3: USSD sessions after the batch, OUTSTANDING
+
+The recorded USSD sessions showing each recipient's paid balance and the
+"Last received" line on screen 7 were not captured on 7 October. From
+13:27 UTC the Africa's Talking sandbox failed every dial on
+`*384*45210#` within one second: the Sessions log shows each attempt as
+Failed with 1 hop and 1 s (successful sessions earlier the same day show
+4 hops and 15 to 59 s), and the callback was never contacted (the capture
+server received no gateway request for any of them, while a POST through
+the same public URL returned screen 1 throughout). Four numbers, two
+tunnel providers (cloudflared quick tunnels and localhost.run) and three
+callback paths were tried; the last attempts, two test dials on r1 at
+14:16 UTC, failed the same way. The session set is carried to the next
+working day with a fresh tunnel and a fresh callback path, in the order
+r1, r2 (with one wrong PIN), r3 (then About), r5, r4 (one attempt).

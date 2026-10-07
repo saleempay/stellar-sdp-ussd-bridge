@@ -21,6 +21,11 @@ funds.
 Deliverable 1 (SDP 7.0.0 testnet tenant): delivered 7 October 2026. See
 `docs/sdp-setup.md` for the setup guide and `EVIDENCE.md` for the live run.
 
+Deliverable 4 (end-to-end batch and evidence package): batch delivered
+7 October 2026 (five USDC payments on testnet, confirmed on Horizon);
+the recorded USSD sessions after the batch are outstanding, see
+`EVIDENCE.md`. Evidence package: `docs/instaward-evidence-package.md`.
+
 Deliverable 3 (USSD receive and balance view): delivered 7 October 2026.
 The menu is the Africa's Talking walkthrough v1 (`docs/ussd-menu-walkthrough-v1.md`)
 with the listed additions (`docs/walkthrough-deviations.md`); a recipient
