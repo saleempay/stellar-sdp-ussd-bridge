@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SdpAdminClient, SdpHttpError, SdpTenantClient } from '../../src/sdp/client.js';
+import { selectDistributionWalletId, uploadDisbursementFile } from '../../src/sdp/disbursement.js';
 import { fakeFetch } from './helpers.js';
 
 describe('SdpAdminClient', () => {
@@ -181,5 +182,37 @@ describe('SdpTenantClient', () => {
     const err = (await new SdpTenantClient({ ...base, token: 't', fetch: fetchImpl }).listAssets().catch((e: unknown) => e)) as SdpHttpError;
     expect(err.status).toBe(500);
     expect(err.message.length).toBeLessThan(400);
+  });
+});
+
+describe('uploadDisbursementFile', () => {
+  const base = { baseUrl: 'http://api:8000', tenantName: 'bridge', token: 't' };
+  const accounts = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `dw${i + 1}`, name: i === 0 ? 'default' : `other${i}`, is_default: i === 0, status: 'ACTIVE' }));
+
+  it('names no distribution account on a single-account tenant and the default one otherwise', async () => {
+    const one = fakeFetch(() => ({ status: 200, body: accounts(1) }));
+    expect(await selectDistributionWalletId(new SdpTenantClient({ ...base, fetch: one.fetchImpl }))).toBe('dw1');
+    const two = fakeFetch(() => ({ status: 200, body: accounts(2) }));
+    expect(await selectDistributionWalletId(new SdpTenantClient({ ...base, fetch: two.fetchImpl }))).toBe('dw1');
+    expect(await selectDistributionWalletId(new SdpTenantClient({ ...base, fetch: two.fetchImpl }), 'dw2')).toBe('dw2');
+  });
+
+  it('creates the disbursement without wallet_id, with X-Wallet-Id on a two-account tenant, uploads the file and reads back', async () => {
+    const { fetchImpl, calls } = fakeFetch((r) => {
+      const p = new URL(r.url).pathname;
+      if (p === '/assets') return { status: 200, body: [{ id: 'a-usdc', code: 'USDC', issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' }] };
+      if (p === '/distribution-wallets') return { status: 200, body: accounts(2) };
+      if (p === '/disbursements' && r.method === 'POST') return { status: 201, body: { id: 'd1', name: 'n', status: 'DRAFT' } };
+      if (p === '/disbursements/d1/instructions') return { status: 200, body: { message: 'ok' } };
+      if (p === '/disbursements/d1') return { status: 200, body: { id: 'd1', name: 'n', status: 'READY' } };
+      if (p === '/disbursements/d1/receivers') return { status: 200, body: { data: [{ id: 'r', receiver_wallet: { status: 'REGISTERED' } }], pagination: {} } };
+      return undefined;
+    });
+    const r = await uploadDisbursementFile(new SdpTenantClient({ ...base, fetch: fetchImpl }), { name: 'n', csv: 'phone,walletAddress,walletAddressMemo,id,amount,paymentID\n', filename: 'f.csv' });
+    const create = calls.find((c) => c.method === 'POST' && c.url.endsWith('/disbursements'))!;
+    expect(JSON.parse(create.body!)).toEqual({ name: 'n', asset_id: 'a-usdc', registration_contact_type: 'PHONE_NUMBER_AND_WALLET_ADDRESS' });
+    expect(create.headers['X-Wallet-Id']).toBe('dw1');
+    expect(r.statusAfterUpload).toBe('READY');
+    expect(r.receiverWalletStatuses).toEqual(['REGISTERED']);
   });
 });
