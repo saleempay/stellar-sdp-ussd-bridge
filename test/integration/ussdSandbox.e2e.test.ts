@@ -55,7 +55,9 @@ describe.skipIf(!enabled)('D3 live: USSD on the Africa\'s Talking sandbox', () =
     expect(has('event=pinRejected'), 'one wrong PIN (E1) observed').toBe(true);
     expect(has('path=returning'), 'returning path (screen 7 after PIN entry) observed').toBe(true);
 
-    const finals = exchanges.filter((e) => e.response.startsWith('END Signed in as'));
+    // a public quick tunnel is scanned by bots; only gateway callbacks carry a session id
+    const callbacks = exchanges.filter((e) => e.fields.sessionId);
+    const finals = callbacks.filter((e) => e.response.startsWith('END Signed in as'));
     expect(finals.length).toBeGreaterThanOrEqual(2);
     for (const f of finals) {
       expect(f.response).toContain('Balance 0.00 USDC');
@@ -63,11 +65,11 @@ describe.skipIf(!enabled)('D3 live: USSD on the Africa\'s Talking sandbox', () =
       expect(f.serverMs).toBeLessThan(8_500);
     }
     const masked = maskMsisdn(recipient!);
-    for (const e of exchanges) expect(e.fields.phoneNumber).toBe(masked);
-    const serialized = JSON.stringify({ run, port, exchanges, events }, null, 2);
+    for (const e of callbacks) expect(e.fields.phoneNumber).toBe(masked);
+    const serialized = JSON.stringify({ run, port, exchanges: callbacks, events }, null, 2);
     expect(serialized).not.toContain(recipient!);
     expect(serialized).not.toContain(cfg.callbackPath);
-    expect(/\d{4}\*|\*\d{4}/.test(exchanges.map((e) => e.fields.text).join('|'))).toBe(false);
+    expect(/\d{4}\*|\*\d{4}/.test(callbacks.map((e) => e.fields.text).join('|'))).toBe(false);
     writeFileSync(join(dir, 'evidence.json'), `${serialized}\n`);
     console.log(`evidence written to ${dir}/evidence.json`);
   }, 20 * 60_000);
