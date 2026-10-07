@@ -483,3 +483,25 @@ under 1.1 s throughout. Recipient r4 (`+2547***5344`) was refused by the
 gateway on every dial of the day, including inside the working window, and
 keeps no PIN. The video of the returning path is carried to the
 Deliverable 4 session, which records screen 7 after the batch in any case.
+
+### Video of session set 4
+
+Two raw QuickTime screen recordings by Ramy Soliman on 7 October 2026,
+held outside the repository (full screen, 3024 by 1964, other windows and
+the typed PIN visible, so never published as is):
+
+| File (on the recording Mac) | Length | SHA-256 |
+|---|---|---|
+| `Screen Recording 2026-10-07 at 17.04.02.mov` (local time, UTC+4) | 21 min 22 s, 1.42 GB | `3e5fd5950a4d556df52fa1e19bfc3c7de96c84f9a7c05c12cdef152fbac26c31` |
+| `Screen Recording 2026-10-07 at 17.25.35.mov` | 5 min 23 s, 223 MB | `562bdadb40adbe263b9899432854e93823774a52026a02c4934d25bd5b93af21` |
+
+The first holds the failed dials and the r3 and r5 test dials; the second
+holds session set 4. The published cut, `docs/evidence/d3-ussd-provisioned-path-r5-2026-10-07.mp4`
+(27 s, 480 by 788, 231 KB, SHA-256
+`605af75e860a8648223cba426890dc02be089fded1ceddcfd0711a773913d263`), is
+seconds 14 to 41 of the second recording, cropped to the simulator phone,
+with the reply line blurred from 8.0 s to 16.5 s (the two PIN screens) and
+nothing else altered: dial, screen 1, `1`, screen 2, PIN, screen 3, PIN,
+the "USSD code running" wait, screen 7 for `GCKM..XAAX`. The cut was made
+with ffmpeg from the raw file and checked frame by frame; the screen times
+match the server log above (dial 13:25:52, account screen 13:26:05 UTC).
