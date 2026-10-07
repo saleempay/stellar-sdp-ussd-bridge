@@ -18,6 +18,20 @@ Released under MIT so any wallet provider or NGO can use it.
 Sprint in progress (October 2026). Testnet only. Nothing here moves real
 funds.
 
+Deliverable 1 (SDP 7.0.0 testnet tenant): delivered 7 October 2026. See
+`docs/sdp-setup.md` for the setup guide and `EVIDENCE.md` for the live run.
+
+## Quick start
+
+```bash
+npm ci
+npm run sdp:accounts     # testnet accounts and secrets into sdp/.env (never committed)
+npm run sdp:up           # start SDP 7.0.0 with Docker Compose and provision the tenant
+```
+
+Then open http://bridge.localhost:3000. Requirements and every verified
+fact with its source: `docs/sdp-setup.md`.
+
 ## Repository layout
 
 - `sdp/`: Docker Compose setup for an SDP 7.0.0 testnet tenant (Deliverable 1)
