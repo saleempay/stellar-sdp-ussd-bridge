@@ -1,0 +1,140 @@
+# Stellar Disbursement Platform 7.0.0, testnet, on the published release
+# images, pinned by tag and manifest digest. Compose reads its variables
+# from sdp/.env (written by `npm run sdp:accounts`); `npm run sdp:up` brings
+# the stack up and provisions the tenant.
+#
+# Sources, all at tag 7.0.0 of stellar/stellar-disbursement-platform-backend:
+#   service layout and start commands: dev/docker-compose-sdp.yml,
+#     dev/docker-compose-tss.yml, dev/docker-compose-frontend.yml
+#   environment names: dev/.env.example and cmd/serve.go
+#   image digests: Docker Hub tags API, 7 October 2026
+# Differences from the upstream developer compose, on purpose: release
+# images instead of a source build with a debugger, health checks instead
+# of fixed sleeps, no demo wallet, no monitoring.
+
+name: ${COMPOSE_PROJECT_NAME:-sdp-bridge}
+
+services:
+  db:
+    image: postgres:14-alpine@sha256:4ea9e5ed06591da7ea23eb65465e8d3187fe79f4d5ec3ae976d29a33b013e77a
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: ${DATABASE_NAME:-sdp_mtn}
+      PGDATA: /data/postgres
+    volumes:
+      - postgres-db:/data/postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${DATABASE_NAME:-sdp_mtn}"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  sdp-api:
+    image: stellar/stellar-disbursement-platform-backend:7.0.0@sha256:54dc7b94656e2d8a84e81e32e787ecbd9ca23a61fe168b60ab4f750072bac126
+    # The published image is linux/amd64 only (Docker Hub manifest, 7 Oct 2026).
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+      - "${ADMIN_PORT:-8003}:${ADMIN_PORT:-8003}"
+    environment:
+      ENVIRONMENT: localhost
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PORT: "${PORT:-8000}"
+      METRICS_PORT: "${METRICS_PORT:-8002}"
+      METRICS_TYPE: PROMETHEUS
+      ADMIN_PORT: "${ADMIN_PORT:-8003}"
+      BASE_URL: ${BASE_URL:-http://localhost:8000}
+      SDP_UI_BASE_URL: ${SDP_UI_BASE_URL:-http://localhost:3000}
+      DATABASE_URL: postgres://postgres@db:5432/${DATABASE_NAME:-sdp_mtn}?sslmode=disable
+      NETWORK_PASSPHRASE: "${NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}"
+      HORIZON_URL: ${HORIZON_URL:-https://horizon-testnet.stellar.org}
+      RPC_URL: ${RPC_URL:-https://soroban-testnet.stellar.org}
+      EMAIL_SENDER_TYPE: DRY_RUN
+      SMS_SENDER_TYPE: DRY_RUN
+      SEP10_CLIENT_ATTRIBUTION_REQUIRED: "true"
+      DISABLE_MFA: "true"
+      DISABLE_RECAPTCHA: "true"
+      CORS_ALLOWED_ORIGINS: "*"
+      INSTANCE_NAME: "${INSTANCE_NAME:-SDP USSD bridge (testnet)}"
+      SINGLE_TENANT_MODE: "false"
+      TENANT_XLM_BOOTSTRAP_AMOUNT: ${TENANT_XLM_BOOTSTRAP_AMOUNT:-5}
+      SCHEDULER_RECEIVER_INVITATION_JOB_SECONDS: "${SCHEDULER_RECEIVER_INVITATION_JOB_SECONDS:-10}"
+      SCHEDULER_PAYMENT_JOB_SECONDS: "${SCHEDULER_PAYMENT_JOB_SECONDS:-10}"
+      ENABLE_SEP45: "false"
+      ENABLE_EMBEDDED_WALLETS: "false"
+      # secrets, required, read from sdp/.env (compose fails fast when unset)
+      DISTRIBUTION_PUBLIC_KEY: ${DISTRIBUTION_PUBLIC_KEY:?set in sdp/.env}
+      DISTRIBUTION_SEED: ${DISTRIBUTION_SEED:?set in sdp/.env}
+      SEP10_SIGNING_PUBLIC_KEY: ${SEP10_SIGNING_PUBLIC_KEY:?set in sdp/.env}
+      SEP10_SIGNING_PRIVATE_KEY: ${SEP10_SIGNING_PRIVATE_KEY:?set in sdp/.env}
+      DISTRIBUTION_ACCOUNT_ENCRYPTION_PASSPHRASE: ${DISTRIBUTION_ACCOUNT_ENCRYPTION_PASSPHRASE:?set in sdp/.env}
+      CHANNEL_ACCOUNT_ENCRYPTION_PASSPHRASE: ${CHANNEL_ACCOUNT_ENCRYPTION_PASSPHRASE:?set in sdp/.env}
+      ADMIN_ACCOUNT: ${ADMIN_ACCOUNT:?set in sdp/.env}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?set in sdp/.env}
+      SEP24_JWT_SECRET: ${SEP24_JWT_SECRET:?set in sdp/.env}
+      EC256_PRIVATE_KEY: ${EC256_PRIVATE_KEY:?set in sdp/.env}
+    entrypoint: ""
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        ./stellar-disbursement-platform db admin migrate up
+        ./stellar-disbursement-platform db tss migrate up
+        ./stellar-disbursement-platform db auth migrate up --all
+        ./stellar-disbursement-platform db sdp migrate up --all
+        ./stellar-disbursement-platform db setup-for-network --all
+        exec ./stellar-disbursement-platform serve
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:${PORT:-8000}/health && wget -q -O /dev/null http://localhost:${ADMIN_PORT:-8003}/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  sdp-tss:
+    image: stellar/stellar-disbursement-platform-backend:7.0.0@sha256:54dc7b94656e2d8a84e81e32e787ecbd9ca23a61fe168b60ab4f750072bac126
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+      sdp-api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres@db:5432/${DATABASE_NAME:-sdp_mtn}?sslmode=disable
+      NETWORK_PASSPHRASE: "${NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}"
+      HORIZON_URL: ${HORIZON_URL:-https://horizon-testnet.stellar.org}
+      RPC_URL: ${RPC_URL:-https://soroban-testnet.stellar.org}
+      NUM_CHANNEL_ACCOUNTS: ${NUM_CHANNEL_ACCOUNTS:-3}
+      MAX_BASE_FEE: "${MAX_BASE_FEE:-1000000}"
+      TSS_METRICS_PORT: "${TSS_METRICS_PORT:-9002}"
+      TSS_METRICS_TYPE: TSS_PROMETHEUS
+      DISTRIBUTION_PUBLIC_KEY: ${DISTRIBUTION_PUBLIC_KEY:?set in sdp/.env}
+      DISTRIBUTION_SEED: ${DISTRIBUTION_SEED:?set in sdp/.env}
+      DISTRIBUTION_ACCOUNT_ENCRYPTION_PASSPHRASE: ${DISTRIBUTION_ACCOUNT_ENCRYPTION_PASSPHRASE:?set in sdp/.env}
+      CHANNEL_ACCOUNT_ENCRYPTION_PASSPHRASE: ${CHANNEL_ACCOUNT_ENCRYPTION_PASSPHRASE:?set in sdp/.env}
+    entrypoint: ""
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        ./stellar-disbursement-platform channel-accounts ensure 1
+        exec ./stellar-disbursement-platform tss
+
+  sdp-frontend:
+    image: stellar/stellar-disbursement-platform-frontend:7.0.0@sha256:edec92a3c3169a041364ea218ec55c905b7e869af8ecb936f0a87ca5f45ea2b7
+    platform: linux/amd64
+    depends_on:
+      - sdp-api
+    ports:
+      - "3000:80"
+    volumes:
+      - ./env-config.js:/usr/share/nginx/html/settings/env-config.js:ro
+
+volumes:
+  postgres-db:
+    name: ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-testnet
