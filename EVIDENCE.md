@@ -456,3 +456,30 @@ live suites, flag gated). `npm run secret-scan`: clean. The catalogue test
 parsed 13 screens from `docs/ussd-menu-walkthrough-v1.md` and matched each
 byte for byte; the budget test rendered 24 screens at their longest values,
 the longest being the account screen at 125 of 156 characters.
+
+### Session set 4: recipient r5, recorded on video (13:25 UTC)
+
+Ramy Soliman recorded the simulator with QuickTime while the session was
+driven; the clip is held outside the repository (the published cut blurs
+the PIN field). The server saw, for `+2547***5355`
+(`docs/evidence/d3-ussd-capture-video-2026-10-07.json`):
+
+| Callback (UTC) | Server | Input (masked) | Response |
+|---|---|---|---|
+| 13:25:52 | 15 ms | dial | screen 1 |
+| 13:25:57 | 20 ms | `1` | screen 2 |
+| 13:26:01 | 4 ms | `1*####` | screen 3 |
+| 13:26:05 | 1164 ms | `1*####*####` | `END Signed in as GCKM..XAAX / Balance 0.00 USDC / No payments received yet / Test only, no funds move` |
+
+The returning path and the About screen were not captured on video: from
+13:27 UTC the sandbox answered every dial for every number with its
+"technical problems" message within one second, the Sessions log shows
+those sessions as Failed with one hop, and the callback was never
+contacted (the gateway's own status page showed all systems operational).
+The same gateway had served the same callback at 13:17, 13:24 and 13:26.
+Two tunnel providers (cloudflared quick tunnels and localhost.run over
+SSH) behaved identically, and a POST through each returned screen 1 in
+under 1.1 s throughout. Recipient r4 (`+2547***5344`) was refused by the
+gateway on every dial of the day, including inside the working window, and
+keeps no PIN. The video of the returning path is carried to the
+Deliverable 4 session, which records screen 7 after the batch in any case.
