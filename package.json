@@ -13,18 +13,24 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "RUN_TESTNET_E2E=1 vitest run test/integration/provision.e2e.test.ts --no-file-parallelism",
     "secret-scan": "sh scripts/secret-scan.sh",
+    "adapter:build": "npm ci --prefix vendor/stellar-ussd-sep10-adapter --no-fund --no-audit && npm run build --prefix vendor/stellar-ussd-sep10-adapter",
+    "sponsor:setup": "node scripts/setup-sponsor.mjs",
+    "provision": "npm run build && node scripts/provision.mjs",
     "sdp:accounts": "node scripts/setup-sdp-accounts.mjs",
     "sdp:up": "npm run build && node scripts/sdp-up.mjs",
     "sdp:check": "npm run build && node scripts/sdp-up.mjs --check-only",
-    "sdp:down": "node scripts/sdp-down.mjs"
+    "sdp:down": "node scripts/sdp-down.mjs",
+    "sdp:upload": "npm run build && node scripts/sdp-upload.mjs"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/saleempay/stellar-sdp-ussd-bridge"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^16.2.0"
+    "@stellar/stellar-sdk": "^16.2.0",
+    "stellar-ussd-sep10-adapter": "file:vendor/stellar-ussd-sep10-adapter"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
