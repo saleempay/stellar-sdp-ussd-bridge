@@ -1,0 +1,214 @@
+{
+  "started": "2026-10-07T11-14-18-335Z",
+  "tunnelBaseUrl": "https://plant-dinner-womens-assumption.trycloudflare.com",
+  "exchanges": [
+    {
+      "at": "2026-10-07T12:39:58.262Z",
+      "fields": {
+        "sessionId": "diag-1791376797",
+        "serviceCode": "*384*45210#",
+        "phoneNumber": "+2547***0099",
+        "networkCode": "99999",
+        "text": ""
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 45
+    },
+    {
+      "at": "2026-10-07T12:39:58.627Z",
+      "fields": {
+        "sessionId": "diag-local",
+        "serviceCode": "*384*45210#",
+        "phoneNumber": "+2547***0099",
+        "text": ""
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-07T12:40:27.162Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_77971ff0e6f4e3625022d21818859082",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 5
+    },
+    {
+      "at": "2026-10-07T12:40:50.910Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_77971ff0e6f4e3625022d21818859082",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Create a 4 digit PIN",
+      "serverMs": 9
+    },
+    {
+      "at": "2026-10-07T12:41:19.711Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_77971ff0e6f4e3625022d21818859082",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter the PIN again",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-07T12:41:23.988Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_77971ff0e6f4e3625022d21818859082",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GDMN..QUUU\nBalance 0.00 USDC\nNo payments received yet\nTest only, no funds move",
+      "serverMs": 998
+    },
+    {
+      "at": "2026-10-07T12:41:48.000Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_05cd1e553b25b5ec547af23217a1d297",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 9
+    },
+    {
+      "at": "2026-10-07T12:41:53.133Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_05cd1e553b25b5ec547af23217a1d297",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 4
+    },
+    {
+      "at": "2026-10-07T12:41:57.411Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_05cd1e553b25b5ec547af23217a1d297",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Wrong PIN. 2 attempts left\nEnter your PIN",
+      "serverMs": 96
+    },
+    {
+      "at": "2026-10-07T12:42:12.878Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_05cd1e553b25b5ec547af23217a1d297",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GDMN..QUUU\nBalance 0.00 USDC\nNo payments received yet\nTest only, no funds move",
+      "serverMs": 904
+    },
+    {
+      "at": "2026-10-07T12:42:21.857Z",
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_364b186f5ea9676a860266dde42f59ae",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 1
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-10-07T12:39:58.303Z",
+      "line": "session=diag-1791376797 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-07T12:39:58.629Z",
+      "line": "session=diag-local event=start state=welcome"
+    },
+    {
+      "at": "2026-10-07T12:40:27.165Z",
+      "line": "session=ATUid_77971ff0e6f4e3625022d21818859082 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-07T12:40:50.918Z",
+      "line": "session=ATUid_77971ff0e6f4e3625022d21818859082 event=step state=welcome>pinSetup1"
+    },
+    {
+      "at": "2026-10-07T12:41:19.713Z",
+      "line": "session=ATUid_77971ff0e6f4e3625022d21818859082 event=step state=pinSetup1>pinSetup2"
+    },
+    {
+      "at": "2026-10-07T12:41:24.091Z",
+      "line": "session=ATUid_77971ff0e6f4e3625022d21818859082 event=pinSaved"
+    },
+    {
+      "at": "2026-10-07T12:41:24.985Z",
+      "line": "session=ATUid_77971ff0e6f4e3625022d21818859082 event=accountScreen path=provisioned hasLastReceived=false"
+    },
+    {
+      "at": "2026-10-07T12:41:24.986Z",
+      "line": "session=ATUid_77971ff0e6f4e3625022d21818859082 event=step state=pinSetup2>done"
+    },
+    {
+      "at": "2026-10-07T12:41:48.008Z",
+      "line": "session=ATUid_05cd1e553b25b5ec547af23217a1d297 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-07T12:41:53.137Z",
+      "line": "session=ATUid_05cd1e553b25b5ec547af23217a1d297 event=step state=welcome>pinEnter"
+    },
+    {
+      "at": "2026-10-07T12:41:57.507Z",
+      "line": "session=ATUid_05cd1e553b25b5ec547af23217a1d297 event=pinRejected left=2"
+    },
+    {
+      "at": "2026-10-07T12:41:57.507Z",
+      "line": "session=ATUid_05cd1e553b25b5ec547af23217a1d297 event=step state=pinEnter>pinEnter"
+    },
+    {
+      "at": "2026-10-07T12:42:12.976Z",
+      "line": "session=ATUid_05cd1e553b25b5ec547af23217a1d297 event=pinVerified"
+    },
+    {
+      "at": "2026-10-07T12:42:13.782Z",
+      "line": "session=ATUid_05cd1e553b25b5ec547af23217a1d297 event=accountScreen path=returning hasLastReceived=false"
+    },
+    {
+      "at": "2026-10-07T12:42:13.782Z",
+      "line": "session=ATUid_05cd1e553b25b5ec547af23217a1d297 event=step state=pinEnter>done"
+    },
+    {
+      "at": "2026-10-07T12:42:21.857Z",
+      "line": "session=ATUid_364b186f5ea9676a860266dde42f59ae event=start state=welcome"
+    }
+  ]
+}

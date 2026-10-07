@@ -11,3 +11,6 @@ export * from './sdp/env.js';
 /** Deliverable 2: the recipient provisioning bridge. */
 export * from './provision/index.js';
 export * from './sdp/disbursement.js';
+
+/** Deliverable 3: the USSD receive and balance view. */
+export * from './ussd/index.js';

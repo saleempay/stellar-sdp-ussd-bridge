@@ -331,3 +331,177 @@ live test fails rather than skips on an SDP error.
 
 `npm run typecheck`: clean. `npm test`: 56 passed, 1 skipped (the live
 test, flag gated). `npm run secret-scan`: clean.
+
+## 2026-10-07: Deliverable 3, USSD receive and balance view
+
+### What this section proves, in plain language
+
+On 7 October 2026 three of the Deliverable 2 recipients dialled the
+bridge's USSD service on the Africa's Talking sandbox simulator. Each had
+an account but no PIN. Each set a PIN on first dial and was taken straight
+to the account screen, which read the account from the Stellar test
+network and showed a balance of 0.00 USDC and "No payments received yet"
+(no payment has been made yet; that is Deliverable 4). Each then dialled
+again, typed a wrong PIN once and saw the "Wrong PIN. 2 attempts left"
+screen, then the right PIN and the account screen again. Every screen
+matched the walkthrough word for word, with the one ruled deviation. The
+service answered every callback in under 2.5 seconds.
+
+### Environment
+
+- Bridge branch `d3-ussd-balance-view`; adapter submodule pinned
+  **temporarily** to `6a0dd6182cbfa0aef31befb19dda5079d7b8b3f7`, the head
+  of adapter PR saleempay/stellar-ussd-sep10-adapter#15 ("Make the USSD
+  step handler injectable"), to be re-pinned to the merge commit on main
+  when it lands
+- Gateway: Africa's Talking sandbox, shared code `*384#`, channel
+  `*384*45210#` created in the dashboard for this run; the callback is a
+  cloudflared quick tunnel to port 8085 plus the path from `.env`
+  (shown masked in every banner and record as `/****d999`)
+- Stores: the Deliverable 2 run directory (accounts of the five
+  recipients) plus a PIN store created by this run
+- Horizon `https://horizon-testnet.stellar.org`, two reads per account
+  screen in parallel, 2.5 s deadline each
+- Creation on dial: on (`USSD_CREATE_ON_DIAL=true`); no creation happened,
+  every recipient already had an account
+
+### Session set 1: recipient r1, driven through the capture script
+
+`docs/evidence/d3-ussd-capture-2026-10-07.json` (gateway callbacks and
+machine events; MSISDN masked, every four-digit input `####`, no path).
+
+| Callback (UTC) | Server | Input (masked) | Response |
+|---|---|---|---|
+| 12:40:27 | 5 ms | dial | `CON Saleem / 1. My account / 2. About` (screen 1) |
+| 12:40:50 | 9 ms | `1` | `CON Create a 4 digit PIN` (screen 2) |
+| 12:41:19 | 2 ms | `1*####` | `CON Enter the PIN again` (screen 3) |
+| 12:41:23 | 998 ms | `1*####*####` | `END Signed in as GDMN..QUUU / Balance 0.00 USDC / No payments received yet / Test only, no funds move` (screen 7, D-1 path, A-1 line) |
+| 12:41:48 | 9 ms | dial | screen 1 |
+| 12:41:53 | 4 ms | `1` | `CON Enter your PIN` (screen 6) |
+| 12:41:57 | 96 ms | `1*####` | `CON Wrong PIN. 2 attempts left / Enter your PIN` (E1) |
+| 12:42:12 | 904 ms | `1*####*####` | screen 7 (returning path) |
+
+Simulator screenshots, PIN field empty in every frame:
+`docs/evidence/d3-screen1-main-menu.jpg`, `d3-screen2-create-pin.jpg`,
+`d3-screen3-confirm-pin.jpg`, `d3-screen7-provisioned-path.jpg`,
+`d3-screen6-enter-pin.jpg`, `d3-screenE1-wrong-pin.jpg`,
+`d3-screen7-returning-path.jpg`.
+
+### Session set 2: recipient r2, through the live test harness (first attempt)
+
+The harness (`npm run test:e2e:ussd`) observed the provisioned path, the
+wrong PIN and the returning path for `GA6R...ZCNA`, then failed its own
+assertion that every recorded exchange carries the masked recipient
+number: the public quick tunnel is scanned by bots, and two pathless
+probes had been recorded as exchanges with no phone number. The check was
+narrowed to gateway callbacks (those with a session id) and the harness
+was run again with the next recipient. The three screens were rendered
+correctly in this attempt as well.
+
+### Session set 3: recipient r3, through the live test harness, PASSED
+
+`npm run test:e2e:ussd` with `USSD_E2E_MSISDN` set to recipient r3:
+**1 passed**, 144 s. Evidence file
+`docs/evidence/d3-ussd-sandbox-test-2026-10-07.json` (callbacks and
+machine events, masked).
+
+| Callback (UTC) | Server | Input (masked) | Response |
+|---|---|---|---|
+| 12:46:39 | 24 ms | dial | screen 1 |
+| 12:46:56 | 7 ms | `1` | screen 2 |
+| 12:47:10 | 3 ms | `1*####` | screen 3 |
+| 12:47:14 | 2458 ms | `1*####*####` | `END Signed in as GADZ..HMBZ / Balance 0.00 USDC / No payments received yet / Test only, no funds move` |
+| 12:47:32 | 2 ms | dial | screen 1 |
+| 12:47:37 | 3 ms | `1` | screen 6 |
+| 12:47:42 | 97 ms | `1*####` | E1 |
+| 12:47:52 | 946 ms | `1*####*####` | screen 7 |
+
+The harness asserted: the provisioned path, one `pinRejected` event and
+the returning path observed; every final screen carries `Balance 0.00
+USDC` and `No payments received yet`; every callback answered in under
+8.5 s; every gateway callback carries the masked number; the serialised
+evidence contains neither the recipient's number nor the callback path;
+no four-digit token survives in any input field.
+
+### What the live run shows and does not show before Deliverable 4
+
+Shown: screens 1, 2, 3, 6, 7 (with A-1) and E1 on the live gateway, the
+ruled deviation D-1, the PIN set on first dial and verified on the second,
+the wrong-PIN countdown, timings. Not shown: a balance above zero and a
+"Last received" line; those need the Deliverable 4 batch, after which the
+same recipients' screen 7 is recorded again.
+
+### Findings while running
+
+1. The sandbox account held no USSD channel at first (the Service Codes
+   page listed none); the channel `*384*45210#` was created in the
+   dashboard. The dashboard answered "technical problems" for dials made
+   before the callback was saved; the server received nothing then.
+2. Saving the callback in the dashboard triggers a GET to the URL (two
+   requests, 200 ms apart, answered 404 by the listener, which serves
+   POST only); this does not block the save.
+3. The callback path was exposed in the build session's transcript by a
+   browser tool that quoted it while reading the dashboard. It was
+   rotated in `.env` after the run and the quick tunnel was closed; the
+   Deliverable 4 run uses a new tunnel and a new path. No evidence file
+   carries either value.
+4. The longest account screen took 2458 ms (two parallel Horizon reads,
+   the slower one close to its 2.5 s deadline); the others took about
+   0.9 to 1.0 s. The 8.5 s watchdog never fired.
+
+### Offline checks
+
+`npm run typecheck`: clean. `npm test`: 114 passed, 2 skipped (the two
+live suites, flag gated). `npm run secret-scan`: clean. The catalogue test
+parsed 13 screens from `docs/ussd-menu-walkthrough-v1.md` and matched each
+byte for byte; the budget test rendered 24 screens at their longest values,
+the longest being the account screen at 125 of 156 characters.
+
+### Session set 4: recipient r5, recorded on video (13:25 UTC)
+
+Ramy Soliman recorded the simulator with QuickTime while the session was
+driven; the clip is held outside the repository (the published cut blurs
+the PIN field). The server saw, for `+2547***5355`
+(`docs/evidence/d3-ussd-capture-video-2026-10-07.json`):
+
+| Callback (UTC) | Server | Input (masked) | Response |
+|---|---|---|---|
+| 13:25:52 | 15 ms | dial | screen 1 |
+| 13:25:57 | 20 ms | `1` | screen 2 |
+| 13:26:01 | 4 ms | `1*####` | screen 3 |
+| 13:26:05 | 1164 ms | `1*####*####` | `END Signed in as GCKM..XAAX / Balance 0.00 USDC / No payments received yet / Test only, no funds move` |
+
+The returning path and the About screen were not captured on video: from
+13:27 UTC the sandbox answered every dial for every number with its
+"technical problems" message within one second, the Sessions log shows
+those sessions as Failed with one hop, and the callback was never
+contacted (the gateway's own status page showed all systems operational).
+The same gateway had served the same callback at 13:17, 13:24 and 13:26.
+Two tunnel providers (cloudflared quick tunnels and localhost.run over
+SSH) behaved identically, and a POST through each returned screen 1 in
+under 1.1 s throughout. Recipient r4 (`+2547***5344`) was refused by the
+gateway on every dial of the day, including inside the working window, and
+keeps no PIN. The video of the returning path is carried to the
+Deliverable 4 session, which records screen 7 after the batch in any case.
+
+### Video of session set 4
+
+Two raw QuickTime screen recordings by Ramy Soliman on 7 October 2026,
+held outside the repository (full screen, 3024 by 1964, other windows and
+the typed PIN visible, so never published as is):
+
+| File (on the recording Mac) | Length | SHA-256 |
+|---|---|---|
+| `Screen Recording 2026-10-07 at 17.04.02.mov` (local time, UTC+4) | 21 min 22 s, 1.42 GB | `3e5fd5950a4d556df52fa1e19bfc3c7de96c84f9a7c05c12cdef152fbac26c31` |
+| `Screen Recording 2026-10-07 at 17.25.35.mov` | 5 min 23 s, 223 MB | `562bdadb40adbe263b9899432854e93823774a52026a02c4934d25bd5b93af21` |
+
+The first holds the failed dials and the r3 and r5 test dials; the second
+holds session set 4. The published cut, `docs/evidence/d3-ussd-provisioned-path-r5-2026-10-07.mp4`
+(27 s, 480 by 788, 231 KB, SHA-256
+`605af75e860a8648223cba426890dc02be089fded1ceddcfd0711a773913d263`), is
+seconds 14 to 41 of the second recording, cropped to the simulator phone,
+with the reply line blurred from 8.0 s to 16.5 s (the two PIN screens) and
+nothing else altered: dial, screen 1, `1`, screen 2, PIN, screen 3, PIN,
+the "USSD code running" wait, screen 7 for `GCKM..XAAX`. The cut was made
+with ffmpeg from the raw file and checked frame by frame; the screen times
+match the server log above (dial 13:25:52, account screen 13:26:05 UTC).
