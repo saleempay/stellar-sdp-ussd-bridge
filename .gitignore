@@ -1,0 +1,21 @@
+# dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# local secrets: never committed
+.env
+.env.*
+!.env.example
+sdp/.env
+sdp/.env.*
+!sdp/.env.example
+
+# local evidence scratch that may carry credentials
+docs/evidence/*.local.*
+*.log
+
+# editors and OS
+.DS_Store
+.vscode/
+.idea/
