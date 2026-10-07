@@ -51,8 +51,8 @@ every PIN as `####`. Transaction hashes are complete.
 
 | # | What to check | How | Expected |
 |---|---|---|---|
-| 4.1 | Batch completed with each recipient's status | (filled when the batch has run) | dashboard screenshot and API record: COMPLETED, five SUCCESS |
-| 4.2 | Payment hashes on stellar.expert | (filled when the batch has run) | five payment transactions, USDC from the distribution account to each recipient |
+| 4.1 | Batch completed with each recipient's status | open `docs/evidence/d4-disbursement-completed.png` and `-2.png`; `docs/evidence/d4-batch-2026-10-07.json` | 5 successful payments, 0 failed, 12.50 USDC disbursed; each of the five receivers shows Success and a transaction hash; the JSON timeline ends `COMPLETED` |
+| 4.2 | Payment hashes on stellar.expert | click each: [94badd0d](https://stellar.expert/explorer/testnet/tx/94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd) 1.5 USDC, [17c76432](https://stellar.expert/explorer/testnet/tx/17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94) 2 USDC, [28e34da3](https://stellar.expert/explorer/testnet/tx/28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41) 2.5 USDC, [51c12ad4](https://stellar.expert/explorer/testnet/tx/51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9) 3 USDC, [34c5d845](https://stellar.expert/explorer/testnet/tx/34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa) 3.5 USDC | each a single payment of USDC from `GBTC...Y6XJ` to the recipient, ledgers 5071608 to 5071614; the funding came from the Circle faucet, [96e36ba7](https://stellar.expert/explorer/testnet/tx/96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3) |
 | 4.3 | Each recipient sees the payment over USSD | (filled when the sessions have run) | screen 7 with the paid balance and the `Last received` line |
 | 4.4 | Integration guide, verified from a clean clone | open `docs/integration-guide.md`; read `EVIDENCE.md`, "Clean clone verification" | every command in the guide appears in the verification run |
 

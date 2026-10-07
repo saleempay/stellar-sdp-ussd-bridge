@@ -535,3 +535,67 @@ was stopped and the original one restarted intact.
 
 The verification clone and its `.env` files were discarded afterwards;
 its testnet accounts stay funded and unused.
+
+## 2026-10-07: Deliverable 4, part 2: the batch
+
+### What this section proves, in plain language
+
+The tenant's distribution account received 20 USDC from Circle's testnet
+faucet. The disbursement uploaded in Deliverable 2, five recipients and
+12.50 USDC in total, was started through the SDP's API at 14:00:20 UTC and
+was complete at 14:01:06 UTC: five payments, every one successful, each a
+USDC payment on the Stellar test network from the distribution account to
+the recipient's account, confirmed by reading the transaction back from
+Horizon. Every recipient's balance on the ledger now equals the amount in
+the file. The dashboard shows the batch as completed with each recipient's
+status.
+
+### Funding (Circle testnet faucet, requested by Ramy Soliman)
+
+- Source: `https://faucet.circle.com`, Stellar Testnet, as named by
+  developers.stellar.org (the MPP charge guide and the x402 quickstart,
+  read 7 October 2026); drip 20 USDC per address per 2 hours as stated on
+  the faucet page.
+- Transaction `96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3`,
+  ledger 5071572, 13:57:27 UTC, successful, one `payment` of 20.0000000 USDC
+  (issuer `GBBD...FLA5`) from the faucet account
+  `GAYF33NNNMI2Z6VNRFXQ64D4E4SF77PM46NW3ZUZEEU5X7FCHAZCMHKU` to the
+  distribution account `GBTC...Y6XJ`:
+  https://stellar.expert/explorer/testnet/tx/96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3
+- `npm run sdp:batch -- --disbursement fa63ed05-98fa-4980-bd26-fe1a3bda11aa --check-only`:
+  balance 20.0000000 USDC, total 12.5000000 USDC, "balance covers the total".
+
+### The batch (`npm run sdp:batch`, run `2026-10-07T14-00-19-844Z`)
+
+Disbursement `fa63ed05-98fa-4980-bd26-fe1a3bda11aa` "D2 evidence 2026-10-07",
+started by `PATCH /disbursements/{id}/status {"status":"STARTED"}` on the
+default distribution account. Timeline (UTC): 14:00:20 STARTED, five READY;
+14:00:25 five PENDING; 14:00:36 two SUCCESS; 14:00:46 three; 14:00:56 four;
+14:01:06 COMPLETED, five SUCCESS. 46 seconds from start to completion.
+
+| Recipient | Amount | Status | Transaction | Ledger |
+|---|---|---|---|---|
+| r1 `GDMN...QUUU` | 1.5000000 USDC | SUCCESS | [94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd](https://stellar.expert/explorer/testnet/tx/94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd) | 5071608 |
+| r2 `GA6R...ZCNA` | 2.0000000 USDC | SUCCESS | [17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94](https://stellar.expert/explorer/testnet/tx/17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94) | 5071609 |
+| r3 `GADZ...HMBZ` | 2.5000000 USDC | SUCCESS | [28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41](https://stellar.expert/explorer/testnet/tx/28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41) | 5071610 |
+| r4 `GBFQ...FAVO` | 3.0000000 USDC | SUCCESS | [51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9](https://stellar.expert/explorer/testnet/tx/51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9) | 5071612 |
+| r5 `GCKM...XAAX` | 3.5000000 USDC | SUCCESS | [34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa](https://stellar.expert/explorer/testnet/tx/34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa) | 5071614 |
+
+Each transaction was read back from Horizon by the script: successful,
+one `payment` operation of that amount in USDC (issuer `GBBD...FLA5`) from
+`GBTC...Y6XJ` to the recipient. Full record, accounts masked:
+`docs/evidence/d4-batch-2026-10-07.json`.
+
+Balances read from Horizon after the run: r1 1.5000000, r2 2.0000000,
+r3 2.5000000, r4 3.0000000, r5 3.5000000 USDC; distribution account
+7.5000000 USDC (20 less 12.5) and 4.9998800 XLM (fees paid by the TSS
+channel account, not by the distribution account, except the two base
+fees of its own operations).
+
+Dashboard, captured by the evidence script at 18:02 local time:
+`docs/evidence/d4-disbursement-completed.png` and `-2.png` (the
+disbursement page: 5 successful payments, 0 failed, 12.50 USDC disbursed,
+each receiver with its transaction hash and Success status),
+`docs/evidence/d4-payments.png` and `-2.png` (the payments list). The
+dashboard shows the recipients' synthetic numbers in full; they are test
+numbers in the sandbox convention and belong to no one.
