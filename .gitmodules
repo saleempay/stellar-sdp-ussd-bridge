@@ -1,0 +1,3 @@
+[submodule "vendor/stellar-ussd-sep10-adapter"]
+	path = vendor/stellar-ussd-sep10-adapter
+	url = https://github.com/saleempay/stellar-ussd-sep10-adapter.git
