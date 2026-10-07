@@ -505,3 +505,33 @@ nothing else altered: dial, screen 1, `1`, screen 2, PIN, screen 3, PIN,
 the "USSD code running" wait, screen 7 for `GCKM..XAAX`. The cut was made
 with ffmpeg from the raw file and checked frame by frame; the screen times
 match the server log above (dial 13:25:52, account screen 13:26:05 UTC).
+
+## 2026-10-07: Deliverable 4, part 1: clean clone verification of the integration guide
+
+### What this section proves, in plain language
+
+The commands in `docs/integration-guide.md` and `docs/sdp-setup.md` were
+run from a fresh copy of this repository, cloned from GitHub into an
+empty directory, with the running tenant stopped first so nothing from
+the build session could help. From that copy, in 83 seconds end to end
+(13:48:30 to 13:49:53 UTC): the dependencies installed, the adapter
+built, the offline suite passed, new testnet accounts were created, the
+SDP 7.0.0 stack started with its own Compose project and two tenants were
+provisioned, a sponsor was created, two recipients were provisioned on
+chain, the disbursement file was uploaded and accepted. Then that stack
+was stopped and the original one restarted intact.
+
+### Run record (log at the time: `d4-clean-clone-verify.log`, local)
+
+- Clone: `git clone --recurse-submodules -b d4-batch-evidence ...`, HEAD `67d4afc`, submodule `6a0dd61`
+- `npm ci`: 96 packages; `npm run adapter:build`; `npm run typecheck`: clean; `npm test`: 121 passed, 2 skipped
+- `npm run sdp:accounts`: host distribution account `GBI7...3YCM`, Friendbot tx `947caad50f62ef445057b189228d02cd65ad16c663d542c7f235ec5cca99618e`
+- `sdp/.env`: `COMPOSE_PROJECT_NAME=sdp-verify` (own volume `sdp-verify_postgres-db-testnet`, same ports as the stopped main stack)
+- `npm run sdp:up` (13:48:47): tenant `bridge` created (id `14f5e2f7...`, distribution account `GB3L...KVGF`), tenant `scopetest` created (`a2fe289c...`, `GBVX...7LTR`), owner passwords set through the reset flow, invitations disabled, user managed wallet enabled, USDC present on both; `SDP up and provisioned`
+- `npm run sponsor:setup`: sponsor `GC6I...KNWA`, Friendbot tx `d971e6acc873598eedf609a9bc4741b02b7735adaf5f4e069872a382406bb4ce`
+- `npm run provision` over two rows: accounts `GDKU...MKA3` (tx `ee45a11ff034fbe1fe489451e02cc6e6ab938472ad5c1ad0f1c69d0d977e8cd7`, ledger 5071477) and `GBXF...SGQV` (tx `c6fa6886421f96e8f09444dda9b9b0a2b6dadc9d382fa88705f102b61b46a752`, ledger 5071478); file SHA-256 `78b0d4d24d47febafc851f49be0c9263f45de7054a0761091ebef4e3abf01533`
+- `npm run sdp:upload`: disbursement `63460fbf-0882-4bc5-bf8e-0c03f23b2a05` "clean clone verification", READY, two receiver wallets REGISTERED
+- `npm run sdp:down` on the verification stack; `npm run sdp:up` on the main stack: both original tenants `already`, `SDP up and provisioned` (13:49:53)
+
+The verification clone and its `.env` files were discarded afterwards;
+its testnet accounts stay funded and unused.
