@@ -54,10 +54,14 @@ pull works on every host without extra flags.
 
 ## 2. Bring the tenant up
 
-From a clean clone:
+From a clean clone (the adapter is a git submodule, so clone with
+`--recurse-submodules` or run `git submodule update --init`):
 
 ```bash
+git clone --recurse-submodules https://github.com/saleempay/stellar-sdp-ussd-bridge.git
+cd stellar-sdp-ussd-bridge
 npm ci
+npm run adapter:build
 npm run sdp:accounts
 npm run sdp:up
 ```
@@ -167,7 +171,26 @@ abandoned), then `npm run sdp:up`.
 - After a testnet reset (announced on the Stellar Dashboard) every account
   is gone: `--reset`, `sdp:accounts -- --force`, `sdp:up`.
 
-## 7. Evidence capture
+## 7. Provisioning recipients (Deliverable 2)
+
+```bash
+npm run sponsor:setup                                   # throwaway testnet sponsor into .env
+npm run provision -- --input recipients.csv --output sdp-disbursement.csv
+npm run sdp:upload -- --file sdp-disbursement.csv --name "my batch"
+```
+
+`recipients.csv` has the header `phone,id,amount` (E.164 phone, your
+reference, USDC amount). The command creates a sponsored account with a
+USDC trustline per new number, binds the number to it in `data/accounts.json`,
+and writes the SDP file in the column order of the dashboard's template:
+`phone,walletAddress,walletAddressMemo,id,amount,paymentID`. Running it
+again creates nothing and writes the same bytes; the command prints the
+file's SHA-256 so you can compare. `sdp:upload` creates the disbursement in
+the bridge tenant and uploads the file; it does not start it. What the
+binding means and what you must add before using this with real people:
+`docs/identity-binding.md`.
+
+## 8. Evidence capture
 
 The screenshots under `docs/evidence/` are taken by
 `scripts/capture-evidence.mjs`, which reads the owner password from

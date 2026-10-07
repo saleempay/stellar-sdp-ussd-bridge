@@ -212,3 +212,122 @@ from `sdp/.env` by the script and never shown.
 `npm run typecheck`: clean. `npm test`: 28 passed. `npm run
 secret-scan`: clean (host account addresses checked against the live
 `sdp/.env`).
+
+## 2026-10-07: Deliverable 2, recipient provisioning bridge
+
+### What this section proves, in plain language
+
+On 7 October 2026 the bridge took a file of five phone numbers and
+amounts and, for each number, created a Stellar account on the test
+network with its reserves paid by a throwaway sponsor and a USDC trustline
+opened in the same transaction, bound the number to the account, and
+wrote the disbursement file the SDP expects. Running the same file again
+created nothing, sent nothing, and wrote the same bytes. The file was then
+uploaded to the SDP tenant from Deliverable 1, which accepted it and
+marked all five recipients as registered without sending any invitation.
+
+### Environment
+
+- Same machine and network as the Deliverable 1 section; Horizon
+  `https://horizon-testnet.stellar.org`
+- Adapter: `saleempay/stellar-ussd-sep10-adapter` as a git submodule at
+  commit `5a3c8dc59be6e398ee0baf778d65b7403fe46951`, built in place; the
+  reference `LocalKeypairSigner` and the JSON account store
+- Asset: USDC, issuer `GBBD...FLA5` (SDP testnet issuer, see
+  `docs/sdp-setup.md` section 4)
+- Run id `2026-10-07T10-14-47-167Z`; full masked record in
+  `test-output/d2-e2e/2026-10-07T10-14-47-167Z/evidence.json` (local)
+
+### Sponsor (created by `npm run sponsor:setup`)
+
+| Account | Funding |
+|---|---|
+| `GBR2...ADZ7` | Friendbot tx `fbe6be6924692bbdc8ddb6c4c76ed5c3c9c1459f7199a3a49c2fdc4dd3a9ca29`, https://stellar.expert/explorer/testnet/tx/fbe6be6924692bbdc8ddb6c4c76ed5c3c9c1459f7199a3a49c2fdc4dd3a9ca29 |
+
+Separate from the SDP host account in `sdp/.env` and from every tenant
+distribution account. Secret in `.env` (mode 600) only.
+
+### First run: five recipients (`npm run test:e2e`, 10:14 UTC)
+
+Input: five synthetic numbers in the sandbox convention, amounts 1.5, 2,
+2.5, 3 and 3.5 USDC, ids `r1` to `r5`, no pin column.
+
+```
+  1  +2547***5311    created          GDMN...QUUU   pin:none      tx c677c443c7096959eee34d5948551344c4be2d28c75df32fd8b45f9e8447a3cb ledger 5068901
+  2  +2547***5322    created          GA6R...ZCNA   pin:none      tx b2e15c288f5b24725318a5a0f318f793f03d1e0b034aeb54c44d9c21fd145d3e ledger 5068902
+  3  +2547***5333    created          GADZ...HMBZ   pin:none      tx 7601407be9d0189511529337bd52f211353fe36d013be3d326080ada677f2371 ledger 5068903
+  4  +2547***5344    created          GBFQ...FAVO   pin:none      tx 100e139e76115756b637e1e4cfc0c501310c55e53400d8a00e90b4f9c28cf16c ledger 5068904
+  5  +2547***5355    created          GCKM...XAAX   pin:none      tx d81b61e5c903adafa1c6012b0b4a4f7565d4c2bfdbb15e3b00dcc0bea0260d29 ledger 5068905
+created 5, trustline added 0, unchanged 0, failed 0, pin refused 0
+```
+
+Links (one sponsored transaction each: begin sponsoring, create account
+with starting balance 0, change trust USDC from the new account, end
+sponsoring):
+
+- https://stellar.expert/explorer/testnet/tx/c677c443c7096959eee34d5948551344c4be2d28c75df32fd8b45f9e8447a3cb
+- https://stellar.expert/explorer/testnet/tx/b2e15c288f5b24725318a5a0f318f793f03d1e0b034aeb54c44d9c21fd145d3e
+- https://stellar.expert/explorer/testnet/tx/7601407be9d0189511529337bd52f211353fe36d013be3d326080ada677f2371
+- https://stellar.expert/explorer/testnet/tx/100e139e76115756b637e1e4cfc0c501310c55e53400d8a00e90b4f9c28cf16c
+- https://stellar.expert/explorer/testnet/tx/d81b61e5c903adafa1c6012b0b4a4f7565d4c2bfdbb15e3b00dcc0bea0260d29
+
+Read back from the ledger after the run: each new account exists with
+`num_sponsored = 3` (two base reserves and one trustline subentry, all
+sponsored), native balance 0, USDC balance 0 with the trustline present.
+The sponsor's `num_sponsoring` went from 0 to 15 and its XLM from
+10000.0000000 to 9999.9998000: it paid fees only (5 transactions of 4
+operations at 100 stroops), the reserves being sponsored rather than
+transferred. Sponsor transaction count: 1 before, 6 after.
+
+### Second run: nothing changes
+
+```
+  1  +2547***5311    unchanged        GDMN...QUUU   pin:none
+  2  +2547***5322    unchanged        GA6R...ZCNA   pin:none
+  3  +2547***5333    unchanged        GADZ...HMBZ   pin:none
+  4  +2547***5344    unchanged        GBFQ...FAVO   pin:none
+  5  +2547***5355    unchanged        GCKM...XAAX   pin:none
+created 0, trustline added 0, unchanged 5, failed 0, pin refused 0
+```
+
+Output identical to the first run; sponsor transaction count still 6.
+The command line path was then run over the same data directory and
+input (`node scripts/provision.mjs ...`): five `unchanged`, exit 0, and it
+wrote `docs/evidence/d2-disbursement.csv` byte for byte identical to the
+test's output.
+
+### The disbursement file
+
+`docs/evidence/d2-disbursement.csv`, SHA-256
+`b4d8c873d47644ff5a45b2ab3b025be2a1834ac8446f917cdef0e73345e6a88f`,
+header `phone,walletAddress,walletAddressMemo,id,amount,paymentID`
+(column set and order verified in `docs/sdp-setup.md` section 4). The
+file carries the full recipient addresses, which the SDP needs; they are
+public keys of the five testnet accounts above and contain no secret. No
+PIN was set for any recipient (ruling of 7 October: recipients set their
+PIN on first dial).
+
+### Upload to the SDP tenant (`npm run sdp:upload`, 10:18 UTC)
+
+Tenant `bridge`, distribution account `default`
+(`7a445139-887b-4d81-b173-492d289eb4d7`), disbursement
+`fa63ed05-98fa-4980-bd26-fe1a3bda11aa` "D2 evidence 2026-10-07": status
+`READY` after upload, 5 receivers, receiver wallet statuses
+`REGISTERED` x 5, no invitation sent (invitations are disabled for the
+organisation). Not started: the distribution account still holds 0 USDC;
+the batch is Deliverable 4.
+
+### Finding while building
+
+The live test's first attempt skipped the upload: `POST /disbursements`
+answered 400 because the tenant now has two distribution accounts (the
+second one was created by the Deliverable 1 scoping retest) and the SDP
+requires `X-Wallet-Id` on writes once a tenant has more than one
+(`docs/multi-wallet/api-reference.md:169-181` at 7.0.0). The upload helper
+now selects the tenant's default account unless one is named, and the
+live test fails rather than skips on an SDP error.
+
+### Offline checks
+
+`npm run typecheck`: clean. `npm test`: 56 passed, 1 skipped (the live
+test, flag gated). `npm run secret-scan`: clean.
