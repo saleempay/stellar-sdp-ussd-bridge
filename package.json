@@ -1,0 +1,38 @@
+{
+  "name": "stellar-sdp-ussd-bridge",
+  "version": "0.1.0",
+  "description": "Bridge between the Stellar Disbursement Platform and basic phones over USSD: recipient provisioning, trustlines, phone binding and a receive and balance menu. Testnet only.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "secret-scan": "sh scripts/secret-scan.sh",
+    "sdp:accounts": "node scripts/setup-sdp-accounts.mjs",
+    "sdp:up": "npm run build && node scripts/sdp-up.mjs",
+    "sdp:check": "npm run build && node scripts/sdp-up.mjs --check-only",
+    "sdp:down": "node scripts/sdp-down.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saleempay/stellar-sdp-ussd-bridge"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents": false
+  }
+}
