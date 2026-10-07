@@ -19,3 +19,6 @@ docs/evidence/*.local.*
 .DS_Store
 .vscode/
 .idea/
+
+# local run artefacts
+test-output/

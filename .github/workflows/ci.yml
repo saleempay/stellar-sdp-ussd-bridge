@@ -1,0 +1,35 @@
+# Offline checks only: install, typecheck, unit tests and the secret scan.
+# Nothing here touches the network, testnet, Docker or the SDP, and nothing
+# here needs a secret. Live runs are recorded in EVIDENCE.md instead.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: install, typecheck, offline tests, secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 22 is the minimum this package declares in engines. Testing the
+      # floor rather than the newest release is deliberate.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: secret scan
+        run: sh scripts/secret-scan.sh
