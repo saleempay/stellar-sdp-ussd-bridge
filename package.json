@@ -22,7 +22,9 @@
     "sdp:up": "npm run build && node scripts/sdp-up.mjs",
     "sdp:check": "npm run build && node scripts/sdp-up.mjs --check-only",
     "sdp:down": "node scripts/sdp-down.mjs",
-    "sdp:upload": "npm run build && node scripts/sdp-upload.mjs"
+    "sdp:upload": "npm run build && node scripts/sdp-upload.mjs",
+    "ussd:capture": "npm run build && node scripts/capture-ussd.mjs",
+    "test:e2e:ussd": "RUN_AT_SANDBOX_E2E=1 vitest run test/integration/ussdSandbox.e2e.test.ts --no-file-parallelism"
   },
   "repository": {
     "type": "git",
