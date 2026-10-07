@@ -22,6 +22,21 @@ import { HorizonTimeoutError } from './errors.js';
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** One record of the payments endpoint (subset of fields). */
+export interface PaymentRecord {
+  type: string;
+  created_at: string;
+  transaction_hash: string;
+  transaction_successful?: boolean;
+  from?: string;
+  to?: string;
+  amount?: string;
+  asset_type?: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  paging_token?: string;
+}
+
 export interface HorizonAccountRecord extends HorizonAccount {
   subentryCount: number;
   numSponsoring: number;
@@ -98,6 +113,18 @@ export class FetchHorizon implements HorizonLike {
     const data = (await res.json().catch(() => undefined)) as { hash?: string; ledger?: number } | undefined;
     if (!res.ok || !data?.hash) throw new HorizonResponseError('submitTransaction', res.status, data);
     return { hash: data.hash, ...(data.ledger !== undefined ? { ledger: data.ledger } : {}) };
+  }
+
+  /**
+   * Successful payment operations touching an account, newest first.
+   * GET /accounts/{id}/payments?order=desc&limit=N (Horizon API; record
+   * fields verified on testnet Horizon, 7 October 2026).
+   */
+  async paymentsFor(accountId: string, limit = 200): Promise<PaymentRecord[]> {
+    const res = await this.call('payments', `/accounts/${encodeURIComponent(accountId)}/payments?order=desc&limit=${limit}`);
+    if (!res.ok) throw new HorizonResponseError('payments', res.status, await res.json().catch(() => undefined));
+    const page = (await res.json()) as { _embedded: { records: PaymentRecord[] } };
+    return page._embedded.records;
   }
 
   /** Number of transactions an account has made (for evidence only). */
