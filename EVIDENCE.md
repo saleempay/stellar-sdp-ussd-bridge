@@ -349,11 +349,11 @@ service answered every callback in under 2.5 seconds.
 
 ### Environment
 
-- Bridge branch `d3-ussd-balance-view`; adapter submodule pinned
-  **temporarily** to `6a0dd6182cbfa0aef31befb19dda5079d7b8b3f7`, the head
-  of adapter PR saleempay/stellar-ussd-sep10-adapter#15 ("Make the USSD
-  step handler injectable"), to be re-pinned to the merge commit on main
-  when it lands
+- Bridge branch `d3-ussd-balance-view`; adapter submodule pinned at the
+  time to `6a0dd6182cbfa0aef31befb19dda5079d7b8b3f7`, the head of adapter
+  PR saleempay/stellar-ussd-sep10-adapter#15 ("Make the USSD step handler
+  injectable"); re-pinned on 7 October to that PR's merge commit on main,
+  see "Deliverable 4, part 4" below
 - Gateway: Africa's Talking sandbox, shared code `*384#`, channel
   `*384*45210#` created in the dashboard for this run; the callback is a
   cloudflared quick tunnel to port 8085 plus the path from `.env`
@@ -615,3 +615,17 @@ callback paths were tried; the last attempts, two test dials on r1 at
 14:16 UTC, failed the same way. The session set is carried to the next
 working day with a fresh tunnel and a fresh callback path, in the order
 r1, r2 (with one wrong PIN), r3 (then About), r5, r4 (one attempt).
+
+## 2026-10-07: Deliverable 4, part 4: adapter submodule re-pinned to the merge of adapter PR #15
+
+Adapter PR #15 was approved by ismo90 against its fix-round head
+`3c22c41875451abe5c7591a6467dc6e7f1c6a1cb` and merged into the adapter's
+`main` as `4c235f87c6af45a7c6043fe16b5eb246e148555f` (14:26:39 UTC;
+content verified identical to `3c22c41`, empty diff; the adapter's own
+suite on that commit 380 passed, 3 skipped). The bridge's submodule
+`vendor/stellar-ussd-sep10-adapter` now points at `4c235f87...` instead
+of the earlier `6a0dd61` from the PR branch. The fix round made `machine`
+and `handle` exclusive on the listener's options, so the bridge's server
+wiring now passes `handle` alone (`src/ussd/server.ts`); nothing else
+changed. After the rebuild, the bridge's suite: 121 passed, 2 skipped,
+typecheck clean.
