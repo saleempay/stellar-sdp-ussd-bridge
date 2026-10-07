@@ -24,7 +24,8 @@
     "sdp:down": "node scripts/sdp-down.mjs",
     "sdp:upload": "npm run build && node scripts/sdp-upload.mjs",
     "ussd:capture": "npm run build && node scripts/capture-ussd.mjs",
-    "test:e2e:ussd": "RUN_AT_SANDBOX_E2E=1 vitest run test/integration/ussdSandbox.e2e.test.ts --no-file-parallelism"
+    "test:e2e:ussd": "RUN_AT_SANDBOX_E2E=1 vitest run test/integration/ussdSandbox.e2e.test.ts --no-file-parallelism",
+    "sdp:batch": "npm run build && node scripts/sdp-batch.mjs"
   },
   "repository": {
     "type": "git",
