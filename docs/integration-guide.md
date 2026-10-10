@@ -350,9 +350,17 @@ at tag 7.0.0). The defaults are the same on every network.
 Two guards run before `sdp:batch` starts a disbursement (not with
 `--skip-start`, which only follows a batch already started):
 
-- the tenant has no disbursement in `STARTED` or `PAUSED`
-  (`GET /disbursements?status=started,paused`); this guard is never
-  bypassed;
+- no disbursement is in `STARTED` (`GET /disbursements?status=started,paused`);
+  no flag lifts this;
+- a disbursement in `PAUSED` refuses unless `--second-run "<reason>"` is
+  given and none of its payments is `READY` or `PENDING`, the two states
+  that reach the network without a further operator action (a `PAUSED`
+  payment moves only on resume, a `FAILED` one only on retry). The SDP
+  itself allows a second start while another disbursement is paused and
+  counts the paused payments against the balance
+  (`internal/services/disbursement_management_service.go:326-359` at
+  7.0.0), so the drain disbursement after a pause must be for the balance
+  less the paused commitments; `--check-only` prints that total;
 - the run log (`BATCH_RUN_LOG`, default `data/batch-run-log.jsonl`, one
   JSON object per line, appended at start and at finish) records no
   completed batch for the current UTC day, unless the operator passes

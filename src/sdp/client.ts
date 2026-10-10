@@ -599,29 +599,26 @@ export class SdpTenantClient {
   }
 
   /**
-   * GET /payments, one page. page_limit defaults to 20 and is capped at 100
-   * (validators/query_validator.go:23-24); there is no disbursement filter
-   * (internal/data/payments.go:69), so callers filter and must page.
-   */
-  /**
-   * GET /payments. `page` and `page_limit` (query_validator.go:29-30 at
-   * 7.0.0, page_limit at most 100, :93-94); `sort` is `created_at` or
+   * GET /payments, one page. `status` takes ONE payment status
+   * (payment_query_validator.go:62-70 at 7.0.0, not a list); `page` and
+   * `page_limit` from query_validator.go:29-30, page_limit default 20 and at
+   * most 100 (query_validator.go:23-24,93-94); `sort` is `created_at` or
    * `updated_at` (internal/data/payments.go:70, AllowedPaymentSorts; the
    * default is updated_at descending, :67) and `direction` is `asc` or
-   * `desc` (query_validator.go:40-44).
+   * `desc` (query_validator.go:40-44); there is no disbursement filter
+   * (internal/data/payments.go:69), so callers filter and must page.
    */
-  async listPayments(walletId?: string, page?: { page: number; pageLimit: number; sort?: 'created_at' | 'updated_at'; direction?: 'asc' | 'desc' }): Promise<Paginated<Payment>> {
+  async listPayments(walletId?: string, filter: { status?: string; page?: number; pageLimit?: number; sort?: 'created_at' | 'updated_at'; direction?: 'asc' | 'desc' } = {}): Promise<Paginated<Payment>> {
     const q = new URLSearchParams();
-    if (page) {
-      q.set('page', String(page.page));
-      q.set('page_limit', String(page.pageLimit));
-      if (page.sort) q.set('sort', page.sort);
-      if (page.direction) q.set('direction', page.direction);
-    }
-    const qs = page ? `?${q.toString()}` : '';
+    if (filter.status) q.set('status', filter.status);
+    if (filter.page !== undefined) q.set('page', String(filter.page));
+    if (filter.pageLimit !== undefined) q.set('page_limit', String(filter.pageLimit));
+    if (filter.sort) q.set('sort', filter.sort);
+    if (filter.direction) q.set('direction', filter.direction);
+    const query = q.toString();
     const res = await this.request({
       method: 'GET',
-      path: `/payments${qs}`,
+      path: `/payments${query ? `?${query}` : ''}`,
       headers: this.headers(this.walletHeader(walletId)),
     });
     return json<Paginated<Payment>>(res);
