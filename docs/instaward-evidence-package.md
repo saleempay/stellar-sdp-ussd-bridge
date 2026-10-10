@@ -16,6 +16,11 @@ Masking convention: accounts are shown as the first 4 and last 4
 characters; phone numbers as the country prefix and the last 4 digits;
 every PIN as `####`. Transaction hashes are complete.
 
+Verification: every link, hash, ledger number, operation and amount below
+was re-checked against Horizon (horizon-testnet.stellar.org), stellar.expert
+and GitHub on **10 October 2026**; nothing had moved. The CSV checksum in
+row 2.2 was recomputed the same day and matches.
+
 ## Deliverable 1: SDP testnet tenant for basic-phone recipients
 
 | # | What to check | How | Expected |
@@ -53,13 +58,13 @@ every PIN as `####`. Transaction hashes are complete.
 |---|---|---|---|
 | 4.1 | Batch completed with each recipient's status | open `docs/evidence/d4-disbursement-completed.png` and `-2.png`; `docs/evidence/d4-batch-2026-10-07.json` | 5 successful payments, 0 failed, 12.50 USDC disbursed; each of the five receivers shows Success and a transaction hash; the JSON timeline ends `COMPLETED` |
 | 4.2 | Payment hashes on stellar.expert | click each: [94badd0d](https://stellar.expert/explorer/testnet/tx/94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd) 1.5 USDC, [17c76432](https://stellar.expert/explorer/testnet/tx/17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94) 2 USDC, [28e34da3](https://stellar.expert/explorer/testnet/tx/28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41) 2.5 USDC, [51c12ad4](https://stellar.expert/explorer/testnet/tx/51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9) 3 USDC, [34c5d845](https://stellar.expert/explorer/testnet/tx/34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa) 3.5 USDC | each a single payment of USDC from `GBTC...Y6XJ` to the recipient, ledgers 5071608 to 5071614; the funding came from the Circle faucet, [96e36ba7](https://stellar.expert/explorer/testnet/tx/96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3) |
-| 4.3 | Each recipient sees the payment over USSD | OUTSTANDING: the sandbox gateway failed every dial from 13:27 UTC on 7 October (`EVIDENCE.md`, "Deliverable 4, part 3"); the sessions are recorded on the next working day | screen 7 with the paid balance and the `Last received 1.50 USDC, 7 Oct` line for each recipient |
+| 4.3 | Each recipient sees the payment over USSD | OUTSTANDING on 10 October: the sandbox gateway failed every dial from 13:27 UTC on 7 October (`EVIDENCE.md`, "Deliverable 4, part 3"); the five sessions are recorded at the next session when the gateway test dial passes | screen 7 with the paid balance and the `Last received 1.50 USDC, 7 Oct` line for each recipient |
 | 4.4 | Integration guide, verified from a clean clone | open `docs/integration-guide.md`; read `EVIDENCE.md`, "Clean clone verification" | every command in the guide appears in the verification run |
 
 ## Also in the package
 
 | # | What to check | How | Expected |
 |---|---|---|---|
-| 5.1 | Offline checks on every pull request | open the Actions tab of the repository | `install, typecheck, offline tests, secret scan` green on PRs #1, #2, #3 |
-| 5.2 | Adapter dependency, pinned | `git submodule status` | one line naming `vendor/stellar-ussd-sep10-adapter` and its commit |
-| 5.3 | The one adapter change | open saleempay/stellar-ussd-sep10-adapter pull request #15 | one optional field on the listener; its review and fix round |
+| 5.1 | Offline checks on every pull request | open the Actions tab of the repository | `install, typecheck, offline tests, secret scan` green on PRs #1, #2, #3, #4 |
+| 5.2 | Adapter dependency, pinned | `git submodule status` | one line naming `vendor/stellar-ussd-sep10-adapter` at commit `4c235f87c6af45a7c6043fe16b5eb246e148555f`, the merge of adapter pull request #15 |
+| 5.3 | The one adapter change | open [saleempay/stellar-ussd-sep10-adapter pull request #15](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/15) and the note in [pull request #17](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/17) | one optional field on the listener; its review and fix round; approved and merged 7 October as `4c235f87` (a merge commit with the default message; #17 records this, content identical to the approved commit) |

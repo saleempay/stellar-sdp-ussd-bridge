@@ -59,7 +59,8 @@ Requirements and every verified fact with its source: `docs/sdp-setup.md`.
 
 The bridge depends on
 [stellar-ussd-sep10-adapter](https://github.com/saleempay/stellar-ussd-sep10-adapter)
-as a git submodule pinned to commit `5a3c8dc`, linked into `node_modules`
+as a git submodule pinned to commit `4c235f8` (the merge of adapter pull
+request #15), linked into `node_modules`
 with a `file:` dependency and built by `npm run adapter:build`. Nothing
 from the adapter is copied. If you cloned without `--recurse-submodules`,
 run `git submodule update --init`.
