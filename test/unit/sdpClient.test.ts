@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SdpAdminClient, SdpHttpError, SdpTenantClient } from '../../src/sdp/client.js';
+import { MfaRequiredError, SdpAdminClient, SdpHttpError, SdpTenantClient } from '../../src/sdp/client.js';
 import { selectDistributionWalletId, uploadDisbursementFile } from '../../src/sdp/disbursement.js';
 import { fakeFetch } from './helpers.js';
 
@@ -280,3 +280,50 @@ describe('SdpTenantClient.login with multi-factor authentication (login_handler.
     await expect(new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b', { mfaCode: async () => '1' })).rejects.toBeInstanceOf(SdpHttpError);
   });
 });
+
+describe('SdpTenantClient strict MFA mode (any network other than testnet)', () => {
+  const base = { baseUrl: 'http://api:8000', tenantName: 'bridge', strictMfa: true };
+  const MFA_MESSAGE = 'MFA code sent to email. Check your inbox and spam folders.';
+
+  it('login refuses a token issued without a code', async () => {
+    const { fetchImpl } = fakeFetch(() => ({ status: 200, body: { token: 'plain' } }));
+    await expect(new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b')).rejects.toBeInstanceOf(MfaRequiredError);
+  });
+
+  it('login with a code returns the token, and never asks the SDP to remember the device', async () => {
+    const { fetchImpl, calls } = fakeFetch((r) => (r.url.endsWith('/login') ? { status: 200, body: { message: MFA_MESSAGE } } : { status: 200, body: { token: 'verified' } }));
+    const token = await new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b', { mfaCode: async () => '123456' });
+    expect(token).toBe('verified');
+    expect(JSON.parse(calls[1]!.body!).remember_me).toBe(false);
+  });
+
+  it('authenticate without a code yields a client restricted to the one call that turns MFA on', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { token: 'plain' } }));
+    const c = await new SdpTenantClient({ ...base, fetch: fetchImpl }).authenticate('a', 'b');
+    expect(c.restrictedToMfaEnable).toBe(true);
+    await expect(c.listAssets()).rejects.toBeInstanceOf(MfaRequiredError);
+    await expect(c.getOrganization()).rejects.toThrow(/GET \/organization refused/);
+    await expect(c.patchOrganization({ mfa_disabled: true })).rejects.toBeInstanceOf(MfaRequiredError);
+    await expect(c.patchOrganization({ mfa_disabled: false, receiver_invitations_disabled: true })).rejects.toBeInstanceOf(MfaRequiredError);
+    expect(calls).toHaveLength(1);
+    await c.patchOrganization({ mfa_disabled: false });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.method).toBe('PATCH');
+    expect(calls[1]?.form?.data?.value).toBe(JSON.stringify({ mfa_disabled: false }));
+  });
+
+  it('authenticate with a code yields an unrestricted client', async () => {
+    const { fetchImpl } = fakeFetch((r) => (r.url.endsWith('/login') ? { status: 200, body: { message: MFA_MESSAGE } } : { status: 200, body: r.url.endsWith('/mfa') ? { token: 'verified' } : [] }));
+    const c = await new SdpTenantClient({ ...base, fetch: fetchImpl }).authenticate('a', 'b', { mfaCode: async () => '123456' });
+    expect(c.restrictedToMfaEnable).toBe(false);
+    await expect(c.listAssets()).resolves.toEqual([]);
+  });
+
+  it('on testnet (strict off) nothing changes: a token without a code is unrestricted', async () => {
+    const { fetchImpl } = fakeFetch(() => ({ status: 200, body: { token: 'plain' } }));
+    const c = await new SdpTenantClient({ baseUrl: 'http://api:8000', tenantName: 'bridge', fetch: fetchImpl }).authenticate('a', 'b');
+    expect(c.restrictedToMfaEnable).toBe(false);
+    expect(c.strictMfa).toBe(false);
+  });
+});
+

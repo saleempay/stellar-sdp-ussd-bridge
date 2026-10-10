@@ -282,10 +282,35 @@ organisation row carries a value in `mfa_disabled`, that value wins and
 the `DISABLE_MFA` environment flag is only the fallback
 (`internal/serve/httphandler/auth_utils.go:36-47`; the nullable column
 comes from `db/migrations/sdp-migrations/2025-09-10.0-add-org-level-mfa-captcha-settings.sql`,
-model `internal/data/organizations.go:55`). The tenants provisioned on
-7 October both read `mfa_disabled: true` through `GET /organization`, so
-`DISABLE_MFA=false` alone changed nothing; how the row got that value is
-not verified. To require a code on this stack, set `DISABLE_MFA=false` in
+model `internal/data/organizations.go:55`). The row gets its first value
+when the tenant is created: the admin API handler copies the admin
+server's `DISABLE_MFA` flag into the provisioning request
+(`stellar-multitenant/internal/httphandler/tenants_handler.go:116` and
+`:129`, `orgMFADisabled := h.DisableMFA` passed as `MFADisabled`), the
+admin server takes that flag from the same `DISABLE_MFA` option as the API
+(`cmd/serve.go:321,727`), and the provisioning manager writes it to the
+new tenant's organisation row together with the name
+(`stellar-multitenant/internal/provisioning/manager.go:341-346`,
+`models.Organizations.Update`). The two tenants were created while the
+stack ran with `DISABLE_MFA=true`, so both rows read `mfa_disabled: true`,
+and flipping the environment flag afterwards changes nothing for them.
+
+The bridge handles this in two ways (L2 fix round, 10 October 2026):
+
+- Readiness step `mfa setting`, after the owner login. On testnet it
+  reports the organisation's value and changes nothing. On any other
+  network it requires `mfa_disabled` to be `false`: when it is `true` (or
+  absent) the step sets it to `false`, logs in again (the SDP now asks for
+  the emailed code) and reads the value back.
+- Strict client mode on any other network (`strictMfa`, derived from
+  `NETWORK_TYPE`): the client never asks the SDP to remember the device
+  (`remember_me` is always `false`), and a token the SDP issued without a
+  code may be used for exactly one call, the `PATCH /organization` that
+  sets `mfa_disabled` to `false`. Every other call with such a token is
+  refused before it reaches the wire (`MfaRequiredError`). On testnet
+  nothing changes.
+
+To require a code on this local stack by hand: set `DISABLE_MFA=false` in
 `sdp/.env`, recreate `sdp-api`, and set `mfa_disabled` to `false` on the
 organisation (`PATCH /organization`, multipart field `data`).
 

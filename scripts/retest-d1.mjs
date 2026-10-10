@@ -41,8 +41,8 @@ const log = (step, detail) => { record.steps.push({ at: stamp(), step, ...maskAl
 const outcome = async (fn) => { try { return { ok: true, value: await fn() }; } catch (e) { return e instanceof SdpHttpError ? { ok: false, status: e.status, error: e.body.slice(0, 300) } : { ok: false, error: String(e).slice(0, 300) }; } };
 
 async function login(tenant) {
-  const c = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name });
-  return c.withToken(await c.login(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() }));
+  const c = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name, strictMfa: cfg.strictMfa });
+  return c.authenticate(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() });
 }
 const [bridgeSpec, scopeSpec] = cfg.tenants;
 const bridge = await login(bridgeSpec);

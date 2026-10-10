@@ -16,6 +16,8 @@ describe('sdpConfigFromEnv', () => {
     const r = readinessConfigFor(cfg, cfg.tenants[0]!);
     expect(r.tenant.ownerEmail).toBe('owner@bridge.local');
     expect(r.uiUrlFor('bridge')).toBe('http://bridge.localhost:3000');
+    expect(cfg.strictMfa).toBe(false);
+    expect(r.networkType).toBe('testnet');
     expect(dashboardUrlFor('https://sdp.example.org', 'bridge')).toBe('https://sdp.example.org');
   });
 

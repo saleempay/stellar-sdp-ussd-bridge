@@ -42,6 +42,8 @@ export interface SdpEnvConfig {
   tenants: TenantSpec[];
   /** The network the stack runs on, after the boot assertion. */
   network: NetworkFacts;
+  /** Strict MFA handling for the tenant client: on for any network other than testnet. */
+  strictMfa: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
   const network = assertNetwork(env);
   return {
     network,
+    strictMfa: network.networkType !== 'testnet',
     apiUrl: env.SDP_API_URL ?? `http://localhost:${port}`,
     adminUrl: env.SDP_ADMIN_URL ?? `http://localhost:${adminPort}`,
     uiOrigin: env.SDP_UI_BASE_URL ?? 'http://localhost:3000',
@@ -103,5 +106,6 @@ export function readinessConfigFor(cfg: SdpEnvConfig, tenant: TenantSpec): Readi
     adminApiKey: cfg.adminApiKey,
     tenant,
     usdcIssuer: cfg.network.assetIssuer,
+    networkType: cfg.network.networkType,
   };
 }

@@ -36,8 +36,8 @@ if (sidecar) {
 
 const cfg = sdpConfigFromEnv(loadEnvFile('sdp/.env'));
 const tenant = cfg.tenants[0];
-const anon = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name });
-const client = anon.withToken(await anon.login(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() }));
+const anon = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name, strictMfa: cfg.strictMfa });
+const client = await anon.authenticate(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() });
 const r = await uploadDisbursementFile(client, { name, csv, filename: basename(file), walletId: opt('--wallet-id'), usdcIssuer: cfg.network.assetIssuer });
 console.log(`tenant ${tenant.name}, distribution account ${r.walletId ?? '(single)'}`);
 console.log(`disbursement ${r.disbursement.id} "${name}": status ${r.statusAfterUpload}, ${r.receiverCount} receivers, wallet statuses ${r.receiverWalletStatuses.join(', ')}`);

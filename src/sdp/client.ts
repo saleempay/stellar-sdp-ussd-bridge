@@ -190,6 +190,8 @@ export interface Wallet {
 export interface Organization {
   name?: string;
   receiver_invitations_disabled?: boolean | null;
+  /** Organisation-level MFA switch (internal/data/organizations.go:55); null means the DISABLE_MFA flag decides. */
+  mfa_disabled?: boolean | null;
   distribution_account_public_key?: string;
   [key: string]: unknown;
 }
@@ -266,6 +268,24 @@ export interface SdpTenantClientOptions {
    * generated when absent. Ignored by the SDP when MFA is disabled.
    */
   deviceId?: string;
+  /**
+   * Strict mode, on for any network other than testnet: `login` refuses a
+   * token obtained without an emailed code (use `authenticate`), the client
+   * never asks the SDP to remember the device, and a token obtained without
+   * a code may be used for exactly one call, the PATCH /organization that
+   * turns MFA on. Every other call on such a client is refused.
+   */
+  strictMfa?: boolean;
+  /** Internal: set by `authenticate` in strict mode when no code was used. */
+  restrictedToMfaEnable?: boolean;
+}
+
+/** Strict mode refused a call because the token was obtained without a code. */
+export class MfaRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MfaRequiredError';
+  }
 }
 
 /** Header name, mfa_handler.go:35 at tag 7.0.0. */
@@ -290,6 +310,10 @@ export class SdpTenantClient {
   readonly tenantName: string;
   private readonly token: string | undefined;
   private readonly deviceId: string;
+  /** Strict mode (any network other than testnet). */
+  readonly strictMfa: boolean;
+  /** True when this client's token was obtained without a code in strict mode: one call allowed. */
+  readonly restrictedToMfaEnable: boolean;
 
   constructor(private readonly opts: SdpTenantClientOptions) {
     this.fetchImpl = opts.fetch ?? ((input, init) => fetch(input, init));
@@ -297,11 +321,24 @@ export class SdpTenantClient {
     this.tenantName = opts.tenantName;
     this.token = opts.token;
     this.deviceId = opts.deviceId ?? randomUUID();
+    this.strictMfa = opts.strictMfa ?? false;
+    this.restrictedToMfaEnable = opts.restrictedToMfaEnable ?? false;
   }
 
-  /** The same client with a Bearer token attached. */
+  /** The same client with a Bearer token attached (unrestricted; in strict mode prefer `authenticate`). */
   withToken(token: string): SdpTenantClient {
-    return new SdpTenantClient({ ...this.opts, token });
+    return new SdpTenantClient({ ...this.opts, token, restrictedToMfaEnable: false });
+  }
+
+  /**
+   * Every authenticated request goes through here. A client restricted to
+   * the MFA-enabling call refuses anything else before it reaches the wire.
+   */
+  private async request(call: Call, purpose: 'mfa-enable' | 'other' = 'other'): Promise<Response> {
+    if (this.restrictedToMfaEnable && purpose !== 'mfa-enable') {
+      throw new MfaRequiredError(`${call.method} ${call.path.split('?')[0]} refused: this token was obtained without a verification code on a network other than testnet; the only call allowed with it is the PATCH /organization that sets mfa_disabled to false`);
+    }
+    return send(this.fetchImpl, this.base, call);
   }
 
   private headers(extra: Record<string, string> = {}): Record<string, string> {
@@ -336,6 +373,25 @@ export class SdpTenantClient {
    * (login_handler.go:59-60, mfa_handler.go:48) and ignores otherwise.
    */
   async login(email: string, password: string, opts: LoginOptions = {}): Promise<string> {
+    const r = await this.loginDetailed(email, password, opts);
+    if (this.strictMfa && !r.codeUsed) {
+      throw new MfaRequiredError('login refused in strict mode: the SDP issued a token without a verification code (MFA is off for this organisation); use authenticate(), whose client may only turn MFA on');
+    }
+    return r.token;
+  }
+
+  /**
+   * Log in and return an authenticated client. In strict mode a token
+   * obtained without a code yields a client restricted to the single call
+   * that turns MFA on (`patchOrganization({ mfa_disabled: false })`); after
+   * that call, authenticate again, which then requires the code.
+   */
+  async authenticate(email: string, password: string, opts: LoginOptions = {}): Promise<SdpTenantClient> {
+    const r = await this.loginDetailed(email, password, opts);
+    return new SdpTenantClient({ ...this.opts, token: r.token, restrictedToMfaEnable: this.strictMfa && !r.codeUsed });
+  }
+
+  private async loginDetailed(email: string, password: string, opts: LoginOptions): Promise<{ token: string; codeUsed: boolean }> {
     const res = await send(this.fetchImpl, this.base, {
       method: 'POST',
       path: '/login',
@@ -343,10 +399,11 @@ export class SdpTenantClient {
       body: JSON.stringify({ email, password }),
     });
     const body = await json<{ token?: string; message?: string }>(res);
-    if (body.token) return body.token;
+    if (body.token) return { token: body.token, codeUsed: false };
     if (body.message !== MFA_CODE_SENT_MESSAGE) throw new SdpHttpError('POST', '/login', res.status, 'response carried no token');
     if (!opts.mfaCode) throw new SdpHttpError('POST', '/mfa', res.status, 'the SDP requires an emailed verification code and no prompt is available');
     const code = await opts.mfaCode(email);
+    // remember_me is always false: the SDP is never asked to remember this device.
     const mfa = await send(this.fetchImpl, this.base, {
       method: 'POST',
       path: '/mfa',
@@ -355,7 +412,7 @@ export class SdpTenantClient {
     });
     const verified = await json<{ token?: string }>(mfa);
     if (!verified.token) throw new SdpHttpError('POST', '/mfa', mfa.status, 'response carried no token');
-    return verified.token;
+    return { token: verified.token, codeUsed: true };
   }
 
   /** POST /forgot-password {email} (forgot_password_handler.go:38-41); always 200. */
@@ -380,7 +437,7 @@ export class SdpTenantClient {
 
   /** GET /organization */
   async getOrganization(): Promise<Organization> {
-    const res = await send(this.fetchImpl, this.base, { method: 'GET', path: '/organization', headers: this.headers() });
+    const res = await this.request({ method: 'GET', path: '/organization', headers: this.headers() });
     return json<Organization>(res);
   }
 
@@ -391,7 +448,9 @@ export class SdpTenantClient {
   async patchOrganization(fields: Record<string, unknown>): Promise<void> {
     const form = new FormData();
     form.set('data', JSON.stringify(fields));
-    await send(this.fetchImpl, this.base, { method: 'PATCH', path: '/organization', headers: this.headers(), body: form });
+    const keys = Object.keys(fields);
+    const mfaEnable = keys.length === 1 && keys[0] === 'mfa_disabled' && fields.mfa_disabled === false;
+    await this.request({ method: 'PATCH', path: '/organization', headers: this.headers(), body: form }, mfaEnable ? 'mfa-enable' : 'other');
   }
 
   /** GET /wallets with the boolean filters from wallets_handler.go:54-55. */
@@ -400,7 +459,7 @@ export class SdpTenantClient {
     if (filter.enabled !== undefined) q.set('enabled', String(filter.enabled));
     if (filter.user_managed !== undefined) q.set('user_managed', String(filter.user_managed));
     const qs = q.toString();
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'GET',
       path: `/wallets${qs ? `?${qs}` : ''}`,
       headers: this.headers(),
@@ -410,7 +469,7 @@ export class SdpTenantClient {
 
   /** PATCH /wallets/{id} (validators/wallet_validator.go:48-55). */
   async patchWallet(id: string, patch: { enabled?: boolean }): Promise<Wallet> {
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'PATCH',
       path: `/wallets/${encodeURIComponent(id)}`,
       headers: this.headers({ 'Content-Type': 'application/json' }),
@@ -421,13 +480,13 @@ export class SdpTenantClient {
 
   /** GET /assets */
   async listAssets(): Promise<Asset[]> {
-    const res = await send(this.fetchImpl, this.base, { method: 'GET', path: '/assets', headers: this.headers() });
+    const res = await this.request({ method: 'GET', path: '/assets', headers: this.headers() });
     return json<Asset[]>(res);
   }
 
   /** GET /distribution-wallets (docs/multi-wallet/api-reference.md, List accounts). */
   async listDistributionWallets(): Promise<DistributionWallet[]> {
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'GET',
       path: '/distribution-wallets',
       headers: this.headers(),
@@ -437,7 +496,7 @@ export class SdpTenantClient {
 
   /** POST /distribution-wallets {name, description}, 201 (same doc, Create an account). */
   async createDistributionWallet(req: { name: string; description?: string }): Promise<DistributionWallet> {
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'POST',
       path: '/distribution-wallets',
       headers: this.headers({ 'Content-Type': 'application/json' }),
@@ -449,7 +508,7 @@ export class SdpTenantClient {
 
   /** POST /disbursements (serve.go:500, disbursement_handler.go:49-56), 201. */
   async createDisbursement(req: CreateDisbursementRequest, walletId?: string): Promise<Disbursement> {
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'POST',
       path: '/disbursements',
       headers: this.headers({ 'Content-Type': 'application/json', ...this.walletHeader(walletId) }),
@@ -467,7 +526,7 @@ export class SdpTenantClient {
     if (!filename.endsWith('.csv')) throw new Error('instructions filename must end with .csv');
     const form = new FormData();
     form.set('file', new Blob([csv], { type: 'text/csv' }), filename);
-    await send(this.fetchImpl, this.base, {
+    await this.request({
       method: 'POST',
       path: `/disbursements/${encodeURIComponent(id)}/instructions`,
       headers: this.headers(this.walletHeader(walletId)),
@@ -477,7 +536,7 @@ export class SdpTenantClient {
 
   /** PATCH /disbursements/{id}/status {status} (disbursement_handler.go:96-98). */
   async patchDisbursementStatus(id: string, status: 'STARTED' | 'PAUSED', walletId?: string): Promise<void> {
-    await send(this.fetchImpl, this.base, {
+    await this.request({
       method: 'PATCH',
       path: `/disbursements/${encodeURIComponent(id)}/status`,
       headers: this.headers({ 'Content-Type': 'application/json', ...this.walletHeader(walletId) }),
@@ -487,7 +546,7 @@ export class SdpTenantClient {
 
   /** GET /disbursements/{id} */
   async getDisbursement(id: string, walletId?: string): Promise<Disbursement> {
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'GET',
       path: `/disbursements/${encodeURIComponent(id)}`,
       headers: this.headers(this.walletHeader(walletId)),
@@ -497,7 +556,7 @@ export class SdpTenantClient {
 
   /** GET /disbursements/{id}/receivers, paginated. */
   async listDisbursementReceivers(id: string, walletId?: string): Promise<Paginated<Record<string, unknown>>> {
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'GET',
       path: `/disbursements/${encodeURIComponent(id)}/receivers`,
       headers: this.headers(this.walletHeader(walletId)),
@@ -508,7 +567,7 @@ export class SdpTenantClient {
   /** GET /receivers?q=..., paginated (validators/query_validator.go:66). */
   async listReceivers(query?: string, walletId?: string): Promise<Paginated<Receiver>> {
     const qs = query ? `?q=${encodeURIComponent(query)}` : '';
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'GET',
       path: `/receivers${qs}`,
       headers: this.headers(this.walletHeader(walletId)),
@@ -537,7 +596,7 @@ export class SdpTenantClient {
       if (page.direction) q.set('direction', page.direction);
     }
     const qs = page ? `?${q.toString()}` : '';
-    const res = await send(this.fetchImpl, this.base, {
+    const res = await this.request({
       method: 'GET',
       path: `/payments${qs}`,
       headers: this.headers(this.walletHeader(walletId)),

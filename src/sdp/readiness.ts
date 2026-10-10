@@ -54,6 +54,11 @@ export interface ReadinessConfig {
   tenant: TenantSpec;
   /** The USDC issuer the tenant must carry: the configured network's issuer (env.ts passes it). Defaults to the testnet issuer. */
   usdcIssuer?: string;
+  /**
+   * The network type (network.ts). On testnet the MFA step only reports the
+   * organisation's setting; on any other network it requires MFA on.
+   */
+  networkType?: string;
   /** How long to wait for the two health endpoints. */
   healthTimeoutMs?: number;
   pollIntervalMs?: number;
@@ -188,11 +193,11 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   // POST /forgot-password (forgot_password_handler.go:38-41), read the
   // token from the dry run message, POST /reset-password
   // (reset_password_handler.go:25-28). Skipped when the login already works.
-  const client = await run('owner login', async () => {
+  const loggedIn = await run('owner login', async () => {
     try {
-      const token = await unauthenticated.login(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
+      const c = await unauthenticated.authenticate(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
       results.push({ step: 'owner login', outcome: 'already', detail: `${spec.ownerEmail} logs in with the held password` });
-      return unauthenticated.withToken(token);
+      return c;
     } catch (cause) {
       if (!(cause instanceof SdpHttpError) || cause.status !== 401) throw cause;
     }
@@ -200,9 +205,44 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
     await unauthenticated.forgotPassword(spec.ownerEmail);
     const resetToken = await deps.readResetToken(tenant, spec.ownerEmail, since);
     await unauthenticated.resetPassword(resetToken, spec.ownerPassword);
-    const token = await unauthenticated.login(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
+    const c = await unauthenticated.authenticate(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
     results.push({ step: 'owner login', outcome: 'done', detail: `password set for ${spec.ownerEmail} through the reset flow; login verified` });
-    return unauthenticated.withToken(token);
+    return c;
+  });
+
+  // 5b: the organisation's MFA setting. The SDP decides MFA per organisation
+  // first (auth_utils.go:36-47); the tenant's row is written at provisioning
+  // with the admin server's DISABLE_MFA value (tenants_handler.go:116-131,
+  // provisioning/manager.go:341-346). Testnet: report it, change nothing.
+  // Any other network: mfa_disabled must be false; when it is not, set it,
+  // then authenticate again (a code is now required) and read it back.
+  const client = await run('mfa setting', async () => {
+    const testnet = (cfg.networkType ?? 'testnet').toLowerCase() === 'testnet';
+    if (loggedIn.restrictedToMfaEnable) {
+      // strict mode, token issued without a code: MFA is off for this organisation
+      await loggedIn.patchOrganization({ mfa_disabled: false });
+      const verified = await unauthenticated.authenticate(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
+      if (verified.restrictedToMfaEnable) throw new Error('mfa_disabled was set to false but the SDP still issued a token without a code');
+      const org = await verified.getOrganization();
+      if (org.mfa_disabled !== false) throw new Error(`mfa_disabled read back as ${String(org.mfa_disabled)} after setting it to false`);
+      results.push({ step: 'mfa setting', outcome: 'done', detail: 'mfa_disabled set to false and read back; login now requires the emailed code' });
+      return verified;
+    }
+    const org = await loggedIn.getOrganization();
+    const value = org.mfa_disabled === undefined ? 'absent' : String(org.mfa_disabled);
+    if (testnet) {
+      results.push({ step: 'mfa setting', outcome: 'ok', detail: `mfa_disabled is ${value} (organisation setting; testnet, unchanged)` });
+      return loggedIn;
+    }
+    if (org.mfa_disabled === false) {
+      results.push({ step: 'mfa setting', outcome: 'already', detail: 'mfa_disabled is false; login required the emailed code' });
+      return loggedIn;
+    }
+    await loggedIn.patchOrganization({ mfa_disabled: false });
+    const again = await loggedIn.getOrganization();
+    if (again.mfa_disabled !== false) throw new Error(`mfa_disabled read back as ${String(again.mfa_disabled)} after setting it to false`);
+    results.push({ step: 'mfa setting', outcome: 'done', detail: `mfa_disabled was ${value}, set to false and read back` });
+    return loggedIn;
   });
 
   // 6: receiver invitations are off for this organisation.

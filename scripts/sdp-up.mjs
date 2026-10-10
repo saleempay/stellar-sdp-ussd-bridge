@@ -49,7 +49,7 @@ if (!checkOnly) {
 }
 
 const admin = new SdpAdminClient({ baseUrl: cfg.adminUrl, adminAccount: cfg.adminAccount, adminApiKey: cfg.adminApiKey });
-const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: name });
+const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: name, strictMfa: cfg.strictMfa });
 
 /**
  * Read the password reset token from the SDP API container log. With
