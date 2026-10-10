@@ -28,11 +28,13 @@ import { parseEnv } from 'node:util';
 import { JsonFileAccountStore, JsonFilePinStore, LocalKeypairSigner } from 'stellar-ussd-sep10-adapter';
 import {
   BridgeError,
+  CapConfigError,
   FetchHorizon,
   JsonFilePendingStore,
   NetworkConfigError,
   USDC_CODE,
   assertNetwork,
+  capsFromEnv,
   formatProvisionReport,
   maskAccount,
   parseInputCsv,
@@ -68,9 +70,13 @@ const horizonUrl = network.horizonUrl;
 const networkPassphrase = network.networkPassphrase;
 const asset = { code: env.ASSET_CODE || USDC_CODE, issuer: network.assetIssuer };
 
+// Caps (MAX_PAYMENT_USDC, MAX_BATCH_USDC; defaults 5 and 25) are applied to
+// the file before anything is created or written.
+let caps;
+try { caps = capsFromEnv({ ...env, ...process.env }); } catch (e) { console.error(e instanceof CapConfigError ? e.message : String(e)); process.exit(2); }
 let rows;
 try {
-  rows = parseInputCsv(readFileSync(input, 'utf8'), { allowPinColumn });
+  rows = parseInputCsv(readFileSync(input, 'utf8'), { allowPinColumn, caps });
 } catch (e) {
   console.error(`input file refused: ${e.message}`);
   process.exit(2);
@@ -93,7 +99,7 @@ const deps = {
   paymentIdPrefix: basename(input).replace(/\.csv$/i, ''),
 };
 
-console.log(`network ${network.networkType}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows, data in ${dataDir}/`);
+console.log(`network ${network.networkType}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows within caps ${caps.maxPaymentUsdc}/${caps.maxBatchUsdc} USDC, data in ${dataDir}/`);
 let report;
 try {
   report = await provisionRecipients(rows, deps);
