@@ -335,6 +335,31 @@ from Horizon and prints the table: recipient (masked), amount, status,
 transaction hash, ledger. Each recipient then sees the payment on their
 next dial. The run is recorded under `test-output/d4-batch/`.
 
+### Caps and guards
+
+Three caps, enforced in the bridge because the SDP has no cap feature on
+this route (no cap configuration in `dev/.env.example` or `cmd/serve.go`
+at tag 7.0.0). The defaults are the same on every network.
+
+| Cap | Variable | Default | Where it bites |
+|---|---|---|---|
+| per payment | `MAX_PAYMENT_USDC` (`.env`) | 5 USDC | `npm run provision` refuses the whole input file when any row is above it, before any account is created or any file is written |
+| per batch | `MAX_BATCH_USDC` (`.env`) | 25 USDC | same, when the file's sum (string arithmetic on stroops) is above it |
+| on the account | `MAX_ACCOUNT_USDC` (`sdp/.env`) | 100 USDC | `npm run sdp:batch` refuses, in `--check-only` too, when the distribution account holds more; move the excess out first |
+
+Two guards run before `sdp:batch` starts a disbursement (not with
+`--skip-start`, which only follows a batch already started):
+
+- the tenant has no disbursement in `STARTED` or `PAUSED`
+  (`GET /disbursements?status=started,paused`); this guard is never
+  bypassed;
+- the run log (`BATCH_RUN_LOG`, default `data/batch-run-log.jsonl`, one
+  JSON object per line, appended at start and at finish) records no
+  completed batch for the current UTC day, unless the operator passes
+  `--second-run "<reason>"`; the reason is written to the run log.
+
+A refusal prints every reason and exits with code 3.
+
 ## What is out of scope
 
 Mainnet; production signing or custody; a persistent signer (the

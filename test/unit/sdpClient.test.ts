@@ -342,3 +342,23 @@ describe('SdpTenantClient strict MFA mode (any network other than testnet)', () 
   });
 });
 
+
+describe('SdpTenantClient.listDisbursements (disbursement_handler.go:310-354 at 7.0.0)', () => {
+  const base = { baseUrl: 'http://api:8000', tenantName: 'bridge', token: 't' };
+
+  it('filters by a comma separated status list and names the distribution account', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { data: [{ id: 'd1', name: 'x', status: 'STARTED' }], pagination: { total: 1 } } }));
+    const page = await new SdpTenantClient({ ...base, fetch: fetchImpl }).listDisbursements({ status: ['STARTED', 'PAUSED'] }, 'dw1');
+    expect(page.data.map((d) => d.id)).toEqual(['d1']);
+    expect(calls[0]?.url).toBe('http://api:8000/disbursements?status=STARTED%2CPAUSED');
+    expect(calls[0]?.headers['X-Wallet-Id']).toBe('dw1');
+    expect(calls[0]?.headers.Authorization).toBe('Bearer t');
+  });
+
+  it('without a filter lists everything, and an empty paginated response is an empty list', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { data: [], pagination: {} } }));
+    const page = await new SdpTenantClient({ ...base, fetch: fetchImpl }).listDisbursements();
+    expect(page.data).toEqual([]);
+    expect(calls[0]?.url).toBe('http://api:8000/disbursements');
+  });
+});

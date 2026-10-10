@@ -582,6 +582,23 @@ export class SdpTenantClient {
   }
 
   /**
+   * GET /disbursements, optionally filtered by status (route serve.go:470,489;
+   * handler disbursement_handler.go:310-354). The `status` query key
+   * (data/query_params.go:44) takes a comma separated list, case
+   * insensitive (validators/disbursement_query_validator.go:55-69). One
+   * page; the tenants this bridge serves hold a handful of disbursements.
+   */
+  async listDisbursements(filter: { status?: string[] } = {}, walletId?: string): Promise<Paginated<Disbursement>> {
+    const query = filter.status?.length ? `?status=${encodeURIComponent(filter.status.join(','))}` : '';
+    const res = await this.request({
+      method: 'GET',
+      path: `/disbursements${query}`,
+      headers: this.headers(this.walletHeader(walletId)),
+    });
+    return json<Paginated<Disbursement>>(res);
+  }
+
+  /**
    * GET /payments, one page. page_limit defaults to 20 and is capped at 100
    * (validators/query_validator.go:23-24); there is no disbursement filter
    * (internal/data/payments.go:69), so callers filter and must page.
