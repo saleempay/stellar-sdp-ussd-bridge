@@ -5,6 +5,7 @@
  * is refused on any structural problem, because a partial file would
  * produce a partial SDP file that looks complete.
  */
+import { CAP_ENV, DEFAULT_CAPS, compareAmounts, sumAmounts, type Caps } from '../sdp/caps.js';
 import { InputFileError } from './errors.js';
 import type { InputRow } from './types.js';
 
@@ -15,9 +16,17 @@ export const AMOUNT_PATTERN = /^(0|[1-9]\d*)(\.\d{1,7})?$/;
 
 export interface ParseInputOptions {
   allowPinColumn?: boolean;
+  /**
+   * Per-payment and per-file caps (rulings of 10 October 2026: 5 and 25
+   * USDC). The defaults apply when omitted. A row above the first, or a
+   * file whose sum exceeds the second, is refused with the whole file,
+   * before any account is created or any file is written.
+   */
+  caps?: Pick<Caps, 'maxPaymentUsdc' | 'maxBatchUsdc'>;
 }
 
 export function parseInputCsv(text: string, opts: ParseInputOptions = {}): InputRow[] {
+  const caps = opts.caps ?? DEFAULT_CAPS;
   const lines = text.replace(/^﻿/, '').split(/\r?\n/);
   while (lines.length && lines[lines.length - 1]!.trim() === '') lines.pop();
   if (!lines.length) throw new InputFileError('input file is empty');
@@ -57,6 +66,9 @@ export function parseInputCsv(text: string, opts: ParseInputOptions = {}): Input
     if (!AMOUNT_PATTERN.test(row.amount) || Number(row.amount) <= 0) {
       throw new InputFileError(`row ${i}: amount must be a positive decimal with at most 7 decimal places`, i);
     }
+    if (compareAmounts(row.amount, caps.maxPaymentUsdc) > 0) {
+      throw new InputFileError(`row ${i}: amount ${row.amount} exceeds the per-payment cap of ${caps.maxPaymentUsdc} USDC (${CAP_ENV.maxPaymentUsdc})`, i);
+    }
     const phoneKey = row.phone.replace(/[\s\-().]/g, '');
     const dupPhone = seenPhones.get(phoneKey);
     if (dupPhone !== undefined) throw new InputFileError(`row ${i}: phone repeats row ${dupPhone}`, i);
@@ -67,5 +79,9 @@ export function parseInputCsv(text: string, opts: ParseInputOptions = {}): Input
     rows.push(row);
   }
   if (!rows.length) throw new InputFileError('input file has a header but no rows');
+  const total = sumAmounts(rows.map((r) => r.amount));
+  if (compareAmounts(total, caps.maxBatchUsdc) > 0) {
+    throw new InputFileError(`file total ${total} USDC exceeds the per-batch cap of ${caps.maxBatchUsdc} USDC (${CAP_ENV.maxBatchUsdc})`);
+  }
   return rows;
 }
