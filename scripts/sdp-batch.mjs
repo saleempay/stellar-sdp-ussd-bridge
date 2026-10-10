@@ -8,7 +8,10 @@
  * Before anything starts (L3, rulings of 10 October 2026):
  * - the distribution account's USDC balance must not exceed MAX_ACCOUNT_USDC
  *   (default 100); an over-funded account refuses, in --check-only too;
- * - the tenant must have no disbursement in STARTED or PAUSED;
+ * - a disbursement in STARTED refuses, no flag lifts it; a disbursement in
+ *   PAUSED refuses unless --second-run "<reason>" is given and none of its
+ *   payments is READY or PENDING (the states that reach the network without a
+ *   further operator action);
  * - the run log (BATCH_RUN_LOG, default data/batch-run-log.jsonl) must record
  *   no completed batch for the current UTC day, unless --second-run "<reason>"
  *   is given; the reason is written to the run log.
@@ -88,7 +91,10 @@ if (checkOnly) {
   console.log(`balance within the ${caps.maxAccountUsdc} USDC ceiling`);
   try {
     const seen = await guardBatchStart({ client, walletId, disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
-    console.log(`guards pass: no disbursement in STARTED or PAUSED; ${seen.completedToday.length} completed batch(es) recorded today${secondRunReason ? ' (second run allowed by the given reason)' : ''}`);
+    const pausedNote = seen.pausedAllowed.length
+      ? `; ${seen.pausedAllowed.length} paused disbursement(s) allowed past by the reason, with ${seen.pausedInProgress.length} payment(s) totalling ${totalAmount(seen.pausedInProgress)} USDC that the SDP still counts against the balance`
+      : '';
+    console.log(`guards pass: nothing STARTED; ${seen.completedToday.length} completed batch(es) recorded today${secondRunReason ? ' (second run allowed by the given reason)' : ''}${pausedNote}`);
   } catch (e) {
     if (e instanceof BatchGuardError) { console.error(`guards would refuse a start: ${e.reasons.join('; ')}`); process.exit(3); }
     throw e;
@@ -97,9 +103,11 @@ if (checkOnly) {
 }
 
 // Guards, only when this run is the one starting the disbursement.
+let pausedAllowed = [];
 if (!skipStart) {
   try {
-    await guardBatchStart({ client, walletId, disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
+    const seen = await guardBatchStart({ client, walletId, disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
+    pausedAllowed = seen.pausedAllowed.map((d) => d.id);
   } catch (e) {
     if (e instanceof BatchGuardError) { console.error(`refused: ${e.reasons.join('; ')}`); process.exit(3); }
     throw e;
@@ -110,7 +118,7 @@ const run = new Date().toISOString().replace(/[:.]/g, '-');
 const dir = join('test-output', 'd4-batch', run);
 mkdirSync(dir, { recursive: true });
 const base = { tenant: tenant.name, network: cfg.network.networkType, disbursementId: d.id, total };
-if (!skipStart) runLog.append({ at: new Date().toISOString(), event: 'started', ...base, ...(secondRunReason ? { secondRunReason } : {}) });
+if (!skipStart) runLog.append({ at: new Date().toISOString(), event: 'started', ...base, ...(secondRunReason ? { secondRunReason } : {}), ...(pausedAllowed.length ? { pausedAllowed } : {}) });
 const result = await runBatch(
   { client, horizon, sleep: (ms) => new Promise((r) => setTimeout(r, ms)), now: () => Date.now() },
   { disbursementId, walletId, asset, timeoutMs, skipStart, distributionAccount: account.distribution_account_address },
