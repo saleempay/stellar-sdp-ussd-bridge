@@ -21,6 +21,11 @@ funds.
 Deliverable 1 (SDP 7.0.0 testnet tenant): delivered 7 October 2026. See
 `docs/sdp-setup.md` for the setup guide and `EVIDENCE.md` for the live run.
 
+Deliverable 4 (end-to-end batch and evidence package): batch delivered
+7 October 2026 (five USDC payments on testnet, confirmed on Horizon);
+the recorded USSD sessions after the batch are outstanding, see
+`EVIDENCE.md`. Evidence package: `docs/instaward-evidence-package.md`.
+
 Deliverable 3 (USSD receive and balance view): delivered 7 October 2026.
 The menu is the Africa's Talking walkthrough v1 (`docs/ussd-menu-walkthrough-v1.md`)
 with the listed additions (`docs/walkthrough-deviations.md`); a recipient
@@ -54,7 +59,8 @@ Requirements and every verified fact with its source: `docs/sdp-setup.md`.
 
 The bridge depends on
 [stellar-ussd-sep10-adapter](https://github.com/saleempay/stellar-ussd-sep10-adapter)
-as a git submodule pinned to commit `5a3c8dc`, linked into `node_modules`
+as a git submodule pinned to commit `4c235f8` (the merge of adapter pull
+request #15), linked into `node_modules`
 with a `file:` dependency and built by `npm run adapter:build`. Nothing
 from the adapter is copied. If you cloned without `--recurse-submodules`,
 run `git submodule update --init`.

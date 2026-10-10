@@ -145,11 +145,27 @@ only, shown masked. `USSD_ALLOWED_CIDRS` adds an IP allowlist when your
 gateway publishes its egress ranges (Africa's Talking does not sign
 callbacks). Session records keep PIN positions masked (`####`).
 
-## 4. Start the batch
+## 4. Fund the distribution account and start the batch
 
-In the SDP dashboard, open the disbursement the upload created and start
-it (it needs USDC in the distribution account). Each recipient then sees
-the payment on their next dial. Deliverable 4 records a complete run.
+The tenant's distribution account must hold the batch total in USDC. On
+testnet, get USDC from Circle's faucet: open `https://faucet.circle.com`,
+choose Stellar Testnet, paste the distribution account address (shown on
+the dashboard's Distribution Accounts page). The faucet is named for this
+purpose by developers.stellar.org (the MPP charge guide and the x402
+quickstart). Then:
+
+```bash
+npm run sdp:batch -- --disbursement <id> --check-only   # balance against the total
+npm run sdp:batch -- --disbursement <id>                # start, follow, confirm on Horizon
+```
+
+The script starts the disbursement (`PATCH /disbursements/{id}/status`),
+polls the payments every 5 seconds until each is SUCCESS or FAILED (the
+SDP's payment job runs every 10 seconds), waits for the disbursement to
+read COMPLETED, then reads every payment's transaction and its operation
+from Horizon and prints the table: recipient (masked), amount, status,
+transaction hash, ledger. Each recipient then sees the payment on their
+next dial. The run is recorded under `test-output/d4-batch/`.
 
 ## What is out of scope
 

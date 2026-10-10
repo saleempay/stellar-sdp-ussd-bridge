@@ -14,3 +14,4 @@ export * from './sdp/disbursement.js';
 
 /** Deliverable 3: the USSD receive and balance view. */
 export * from './ussd/index.js';
+export * from './sdp/batch.js';

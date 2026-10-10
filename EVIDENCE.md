@@ -349,11 +349,11 @@ service answered every callback in under 2.5 seconds.
 
 ### Environment
 
-- Bridge branch `d3-ussd-balance-view`; adapter submodule pinned
-  **temporarily** to `6a0dd6182cbfa0aef31befb19dda5079d7b8b3f7`, the head
-  of adapter PR saleempay/stellar-ussd-sep10-adapter#15 ("Make the USSD
-  step handler injectable"), to be re-pinned to the merge commit on main
-  when it lands
+- Bridge branch `d3-ussd-balance-view`; adapter submodule pinned at the
+  time to `6a0dd6182cbfa0aef31befb19dda5079d7b8b3f7`, the head of adapter
+  PR saleempay/stellar-ussd-sep10-adapter#15 ("Make the USSD step handler
+  injectable"); re-pinned on 7 October to that PR's merge commit on main,
+  see "Deliverable 4, part 4" below
 - Gateway: Africa's Talking sandbox, shared code `*384#`, channel
   `*384*45210#` created in the dashboard for this run; the callback is a
   cloudflared quick tunnel to port 8085 plus the path from `.env`
@@ -505,3 +505,165 @@ nothing else altered: dial, screen 1, `1`, screen 2, PIN, screen 3, PIN,
 the "USSD code running" wait, screen 7 for `GCKM..XAAX`. The cut was made
 with ffmpeg from the raw file and checked frame by frame; the screen times
 match the server log above (dial 13:25:52, account screen 13:26:05 UTC).
+
+## 2026-10-07: Deliverable 4, part 1: clean clone verification of the integration guide
+
+### What this section proves, in plain language
+
+The commands in `docs/integration-guide.md` and `docs/sdp-setup.md` were
+run from a fresh copy of this repository, cloned from GitHub into an
+empty directory, with the running tenant stopped first so nothing from
+the build session could help. From that copy, in 83 seconds end to end
+(13:48:30 to 13:49:53 UTC): the dependencies installed, the adapter
+built, the offline suite passed, new testnet accounts were created, the
+SDP 7.0.0 stack started with its own Compose project and two tenants were
+provisioned, a sponsor was created, two recipients were provisioned on
+chain, the disbursement file was uploaded and accepted. Then that stack
+was stopped and the original one restarted intact.
+
+### Run record (log at the time: `d4-clean-clone-verify.log`, local)
+
+- Clone: `git clone --recurse-submodules -b d4-batch-evidence ...`, HEAD `67d4afc`, submodule `6a0dd61`
+- `npm ci`: 96 packages; `npm run adapter:build`; `npm run typecheck`: clean; `npm test`: 121 passed, 2 skipped
+- `npm run sdp:accounts`: host distribution account `GBI7...3YCM`, Friendbot tx `947caad50f62ef445057b189228d02cd65ad16c663d542c7f235ec5cca99618e`
+- `sdp/.env`: `COMPOSE_PROJECT_NAME=sdp-verify` (own volume `sdp-verify_postgres-db-testnet`, same ports as the stopped main stack)
+- `npm run sdp:up` (13:48:47): tenant `bridge` created (id `14f5e2f7...`, distribution account `GB3L...KVGF`), tenant `scopetest` created (`a2fe289c...`, `GBVX...7LTR`), owner passwords set through the reset flow, invitations disabled, user managed wallet enabled, USDC present on both; `SDP up and provisioned`
+- `npm run sponsor:setup`: sponsor `GC6I...KNWA`, Friendbot tx `d971e6acc873598eedf609a9bc4741b02b7735adaf5f4e069872a382406bb4ce`
+- `npm run provision` over two rows: accounts `GDKU...MKA3` (tx `ee45a11ff034fbe1fe489451e02cc6e6ab938472ad5c1ad0f1c69d0d977e8cd7`, ledger 5071477) and `GBXF...SGQV` (tx `c6fa6886421f96e8f09444dda9b9b0a2b6dadc9d382fa88705f102b61b46a752`, ledger 5071478); file SHA-256 `78b0d4d24d47febafc851f49be0c9263f45de7054a0761091ebef4e3abf01533`
+- `npm run sdp:upload`: disbursement `63460fbf-0882-4bc5-bf8e-0c03f23b2a05` "clean clone verification", READY, two receiver wallets REGISTERED
+- `npm run sdp:down` on the verification stack; `npm run sdp:up` on the main stack: both original tenants `already`, `SDP up and provisioned` (13:49:53)
+
+The verification clone and its `.env` files were discarded afterwards;
+its testnet accounts stay funded and unused.
+
+## 2026-10-07: Deliverable 4, part 2: the batch
+
+### What this section proves, in plain language
+
+The tenant's distribution account received 20 USDC from Circle's testnet
+faucet. The disbursement uploaded in Deliverable 2, five recipients and
+12.50 USDC in total, was started through the SDP's API at 14:00:20 UTC and
+was complete at 14:01:06 UTC: five payments, every one successful, each a
+USDC payment on the Stellar test network from the distribution account to
+the recipient's account, confirmed by reading the transaction back from
+Horizon. Every recipient's balance on the ledger now equals the amount in
+the file. The dashboard shows the batch as completed with each recipient's
+status.
+
+### Funding (Circle testnet faucet, requested by Ramy Soliman)
+
+- Source: `https://faucet.circle.com`, Stellar Testnet, as named by
+  developers.stellar.org (the MPP charge guide and the x402 quickstart,
+  read 7 October 2026); drip 20 USDC per address per 2 hours as stated on
+  the faucet page.
+- Transaction `96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3`,
+  ledger 5071572, 13:57:27 UTC, successful, one `payment` of 20.0000000 USDC
+  (issuer `GBBD...FLA5`) from the faucet account
+  `GAYF33NNNMI2Z6VNRFXQ64D4E4SF77PM46NW3ZUZEEU5X7FCHAZCMHKU` to the
+  distribution account `GBTC...Y6XJ`:
+  https://stellar.expert/explorer/testnet/tx/96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3
+- `npm run sdp:batch -- --disbursement fa63ed05-98fa-4980-bd26-fe1a3bda11aa --check-only`:
+  balance 20.0000000 USDC, total 12.5000000 USDC, "balance covers the total".
+
+### The batch (`npm run sdp:batch`, run `2026-10-07T14-00-19-844Z`)
+
+Disbursement `fa63ed05-98fa-4980-bd26-fe1a3bda11aa` "D2 evidence 2026-10-07",
+started by `PATCH /disbursements/{id}/status {"status":"STARTED"}` on the
+default distribution account. Timeline (UTC): 14:00:20 STARTED, five READY;
+14:00:25 five PENDING; 14:00:36 two SUCCESS; 14:00:46 three; 14:00:56 four;
+14:01:06 COMPLETED, five SUCCESS. 46 seconds from start to completion.
+
+| Recipient | Amount | Status | Transaction | Ledger |
+|---|---|---|---|---|
+| r1 `GDMN...QUUU` | 1.5000000 USDC | SUCCESS | [94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd](https://stellar.expert/explorer/testnet/tx/94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd) | 5071608 |
+| r2 `GA6R...ZCNA` | 2.0000000 USDC | SUCCESS | [17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94](https://stellar.expert/explorer/testnet/tx/17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94) | 5071609 |
+| r3 `GADZ...HMBZ` | 2.5000000 USDC | SUCCESS | [28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41](https://stellar.expert/explorer/testnet/tx/28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41) | 5071610 |
+| r4 `GBFQ...FAVO` | 3.0000000 USDC | SUCCESS | [51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9](https://stellar.expert/explorer/testnet/tx/51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9) | 5071612 |
+| r5 `GCKM...XAAX` | 3.5000000 USDC | SUCCESS | [34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa](https://stellar.expert/explorer/testnet/tx/34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa) | 5071614 |
+
+Each transaction was read back from Horizon by the script: successful,
+one `payment` operation of that amount in USDC (issuer `GBBD...FLA5`) from
+`GBTC...Y6XJ` to the recipient. Full record, accounts masked:
+`docs/evidence/d4-batch-2026-10-07.json`.
+
+Balances read from Horizon after the run: r1 1.5000000, r2 2.0000000,
+r3 2.5000000, r4 3.0000000, r5 3.5000000 USDC; distribution account
+7.5000000 USDC (20 less 12.5) and 4.9998800 XLM (fees paid by the TSS
+channel account, not by the distribution account, except the two base
+fees of its own operations).
+
+Dashboard, captured by the evidence script at 18:02 local time:
+`docs/evidence/d4-disbursement-completed.png` and `-2.png` (the
+disbursement page: 5 successful payments, 0 failed, 12.50 USDC disbursed,
+each receiver with its transaction hash and Success status),
+`docs/evidence/d4-payments.png` and `-2.png` (the payments list). The
+dashboard shows the recipients' synthetic numbers in full; they are test
+numbers in the sandbox convention and belong to no one.
+
+## 2026-10-07: Deliverable 4, part 3: USSD sessions after the batch, OUTSTANDING
+
+The recorded USSD sessions showing each recipient's paid balance and the
+"Last received" line on screen 7 were not captured on 7 October. From
+13:27 UTC the Africa's Talking sandbox failed every dial on
+`*384*45210#` within one second: the Sessions log shows each attempt as
+Failed with 1 hop and 1 s (successful sessions earlier the same day show
+4 hops and 15 to 59 s), and the callback was never contacted (the capture
+server received no gateway request for any of them, while a POST through
+the same public URL returned screen 1 throughout). Four numbers, two
+tunnel providers (cloudflared quick tunnels and localhost.run) and three
+callback paths were tried; the last attempts, two test dials on r1 at
+14:16 UTC, failed the same way. The session set is carried to the next
+working day with a fresh tunnel and a fresh callback path, in the order
+r1, r2 (with one wrong PIN), r3 (then About), r5, r4 (one attempt).
+
+## 2026-10-10: Deliverable 4, part 3, second attempt: sandbox still failing, OUTSTANDING
+
+The recording session was retried on 10 October 2026 with a fresh
+cloudflared quick tunnel and a freshly rotated callback path. The capture
+server (`npm run ussd:capture`, record
+`test-output/ussd-capture/2026-10-10T11-20-47-584Z.json`, local) listened
+from 11:20 UTC. The public route was confirmed end to end before any dial:
+a POST through the tunnel to the callback path at 11:21:11 UTC reached the
+server and was answered in 2 ms with the expected `400 bad request` for a
+request without a phone number (`GATEWAY_REQUEST_INVALID`); a 404 or 502
+would have meant a wrong path or a dead tunnel. After the callback URL was
+saved in the sandbox dashboard, the test dial on r1 failed exactly as on
+7 October: the gateway's Sessions log shows Failed, 1 hop, no callback
+contact. The server received no request from the gateway at any time; the
+only other entries in the record are two 404 responses at 11:23:27 UTC.
+The recorder reads the body of every request before the path check, and
+both bodies were empty; a gateway callback always carries sessionId,
+phoneNumber and text, so these were not gateway requests on a wrong path
+(the 7 October records show the same empty-body 404 pairs at dial times).
+The callback path the server listened on and the path saved in the
+dashboard were compared by their last four characters and match, which
+rules out a stale clipboard when the callback URL was pasted.
+
+Second-channel diagnostic (Ramy Soliman, dashboard side): a second sandbox
+USSD channel on the same Africa's Talking account, pointed at the same
+callback URL, failed identically (Failed, 1 hop, no callback contact).
+Two channels failing the same way with a verified reachable callback
+places the fault on the account or gateway side, not in the bridge, the
+tunnel or the callback path. A support request has gone to Africa's
+Talking. The capture server and the tunnel were stopped at 11:32 UTC.
+
+The row stays OUTSTANDING, not failed. The five-recipient order is ready
+for when the sandbox is restored: r1 (returning path), r2 (one wrong PIN,
+then the right one), r3 (returning path, then About), r5 (returning
+path), r4 (one attempt, provisioned path). A fresh tunnel and a fresh
+callback path are used on that day, with the gateway test dial on r1
+first.
+
+## 2026-10-07: Deliverable 4, part 4: adapter submodule re-pinned to the merge of adapter PR #15
+
+Adapter PR #15 was approved by ismo90 against its fix-round head
+`3c22c41875451abe5c7591a6467dc6e7f1c6a1cb` and merged into the adapter's
+`main` as `4c235f87c6af45a7c6043fe16b5eb246e148555f` (14:26:39 UTC;
+content verified identical to `3c22c41`, empty diff; the adapter's own
+suite on that commit 380 passed, 3 skipped). The bridge's submodule
+`vendor/stellar-ussd-sep10-adapter` now points at `4c235f87...` instead
+of the earlier `6a0dd61` from the PR branch. The fix round made `machine`
+and `handle` exclusive on the listener's options, so the bridge's server
+wiring now passes `handle` alone (`src/ussd/server.ts`); nothing else
+changed. After the rebuild, the bridge's suite: 121 passed, 2 skipped,
+typecheck clean.

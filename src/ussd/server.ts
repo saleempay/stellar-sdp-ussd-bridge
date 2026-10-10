@@ -1,6 +1,7 @@
 /**
  * Wiring of the bridge's USSD service: the adapter's HTTP listener with
- * the bridge's step machine injected (adapter PR #15, `handle`), the
+ * the bridge's step machine injected (adapter PR #15, merged as 4c235f8:
+ * exactly one of `machine` or `handle`), the
  * adapter's gateway adapter, session store and PIN store, the bridge's
  * account view over Horizon, and sponsored creation on dial through the
  * adapter's resolveOrCreateAccount with the Deliverable 2 sponsor.
@@ -17,7 +18,7 @@ import {
   parseCidrList,
   resolveOrCreateAccount,
   type AccountStore,
-  type MachineDeps,
+  type GatewayStep,
   type PinStore,
 } from 'stellar-ussd-sep10-adapter';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -103,26 +104,12 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
   };
   if (createAccount) machine.createAccount = createAccount;
 
-  // The adapter's listener needs a MachineDeps value even though `handle`
-  // replaces its machine; this one is never invoked.
-  const unused: MachineDeps = {
-    sessions,
-    pins,
-    journey: {
-      async lookupAccount() { throw new Error('not used: the bridge supplies handle'); },
-      async checkTrustline() { throw new Error('not used'); },
-      async createAccount() { throw new Error('not used'); },
-      async authenticateAndDeposit() { throw new Error('not used'); },
-    },
-    msisdn: { defaultCountryCode: cfg.defaultCountryCode },
-  };
   const listener = createUssdRequestListener({
     gateway: new AfricasTalkingGateway(),
-    machine: unused,
     sessions,
     callbackPath: cfg.callbackPath,
     allowedCidrs: cfg.allowedCidrs ? parseCidrList(cfg.allowedCidrs) : undefined,
-    handle: (step) => handleBridgeStep(machine, step),
+    handle: (step: GatewayStep) => handleBridgeStep(machine, step),
     log,
   });
   return { listener, machine };

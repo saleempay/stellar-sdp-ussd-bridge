@@ -1,0 +1,384 @@
+{
+  "run": "2026-10-07T14-00-19-844Z",
+  "tenant": "bridge",
+  "distributionAccount": "GBTC...Y6XJ",
+  "disbursement": {
+    "id": "fa63ed05-98fa-4980-bd26-fe1a3bda11aa",
+    "name": "D2 evidence 2026-10-07",
+    "statusBefore": "READY",
+    "total": "12.5000000"
+  },
+  "usdcBefore": "20.0000000",
+  "usdcAfter": "7.5000000",
+  "result": {
+    "disbursementId": "fa63ed05-98fa-4980-bd26-fe1a3bda11aa",
+    "started": true,
+    "finalStatus": "COMPLETED",
+    "timedOut": false,
+    "timeline": [
+      {
+        "at": "2026-10-07T14:00:20.818Z",
+        "disbursementStatus": "STARTED",
+        "payments": [
+          {
+            "id": "e5c26b2a-3427-4268-ad11-34710df8285d",
+            "amount": "1.5000000",
+            "status": "READY",
+            "txHash": null,
+            "toMasked": "GDMN...QUUU",
+            "receiverId": "f087377f-5d9b-4121-b145-59258dbcb094"
+          },
+          {
+            "id": "cc2ad44d-42fd-4898-b313-e059270630aa",
+            "amount": "2.0000000",
+            "status": "READY",
+            "txHash": null,
+            "toMasked": "GA6R...ZCNA",
+            "receiverId": "fa23e3e3-5ca4-472a-899e-e428a6517fe7"
+          },
+          {
+            "id": "ba1b92c4-b146-4fff-8481-6fd3ac2962a1",
+            "amount": "2.5000000",
+            "status": "READY",
+            "txHash": null,
+            "toMasked": "GADZ...HMBZ",
+            "receiverId": "2c82fb99-4370-4d6d-b4d2-feaa52fc6359"
+          },
+          {
+            "id": "f73c47ab-b2a8-4822-bada-2d5ad1768c72",
+            "amount": "3.0000000",
+            "status": "READY",
+            "txHash": null,
+            "toMasked": "GBFQ...FAVO",
+            "receiverId": "b162bf06-3b8b-496d-bc9c-cea329078e7d"
+          },
+          {
+            "id": "c9a9b7d9-a0a2-410d-a881-93677e312a1b",
+            "amount": "3.5000000",
+            "status": "READY",
+            "txHash": null,
+            "toMasked": "GCKM...XAAX",
+            "receiverId": "ccc1039a-95cc-4fe6-a0ac-88d1a2b66eda"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-07T14:00:25.862Z",
+        "disbursementStatus": "STARTED",
+        "payments": [
+          {
+            "id": "e5c26b2a-3427-4268-ad11-34710df8285d",
+            "amount": "1.5000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GDMN...QUUU",
+            "receiverId": "f087377f-5d9b-4121-b145-59258dbcb094"
+          },
+          {
+            "id": "cc2ad44d-42fd-4898-b313-e059270630aa",
+            "amount": "2.0000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GA6R...ZCNA",
+            "receiverId": "fa23e3e3-5ca4-472a-899e-e428a6517fe7"
+          },
+          {
+            "id": "ba1b92c4-b146-4fff-8481-6fd3ac2962a1",
+            "amount": "2.5000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GADZ...HMBZ",
+            "receiverId": "2c82fb99-4370-4d6d-b4d2-feaa52fc6359"
+          },
+          {
+            "id": "f73c47ab-b2a8-4822-bada-2d5ad1768c72",
+            "amount": "3.0000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GBFQ...FAVO",
+            "receiverId": "b162bf06-3b8b-496d-bc9c-cea329078e7d"
+          },
+          {
+            "id": "c9a9b7d9-a0a2-410d-a881-93677e312a1b",
+            "amount": "3.5000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GCKM...XAAX",
+            "receiverId": "ccc1039a-95cc-4fe6-a0ac-88d1a2b66eda"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-07T14:00:36.005Z",
+        "disbursementStatus": "STARTED",
+        "payments": [
+          {
+            "id": "e5c26b2a-3427-4268-ad11-34710df8285d",
+            "amount": "1.5000000",
+            "status": "SUCCESS",
+            "txHash": "94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd",
+            "toMasked": "GDMN...QUUU",
+            "receiverId": "f087377f-5d9b-4121-b145-59258dbcb094"
+          },
+          {
+            "id": "cc2ad44d-42fd-4898-b313-e059270630aa",
+            "amount": "2.0000000",
+            "status": "SUCCESS",
+            "txHash": "17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94",
+            "toMasked": "GA6R...ZCNA",
+            "receiverId": "fa23e3e3-5ca4-472a-899e-e428a6517fe7"
+          },
+          {
+            "id": "ba1b92c4-b146-4fff-8481-6fd3ac2962a1",
+            "amount": "2.5000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GADZ...HMBZ",
+            "receiverId": "2c82fb99-4370-4d6d-b4d2-feaa52fc6359"
+          },
+          {
+            "id": "f73c47ab-b2a8-4822-bada-2d5ad1768c72",
+            "amount": "3.0000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GBFQ...FAVO",
+            "receiverId": "b162bf06-3b8b-496d-bc9c-cea329078e7d"
+          },
+          {
+            "id": "c9a9b7d9-a0a2-410d-a881-93677e312a1b",
+            "amount": "3.5000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GCKM...XAAX",
+            "receiverId": "ccc1039a-95cc-4fe6-a0ac-88d1a2b66eda"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-07T14:00:46.095Z",
+        "disbursementStatus": "STARTED",
+        "payments": [
+          {
+            "id": "ba1b92c4-b146-4fff-8481-6fd3ac2962a1",
+            "amount": "2.5000000",
+            "status": "SUCCESS",
+            "txHash": "28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41",
+            "toMasked": "GADZ...HMBZ",
+            "receiverId": "2c82fb99-4370-4d6d-b4d2-feaa52fc6359"
+          },
+          {
+            "id": "e5c26b2a-3427-4268-ad11-34710df8285d",
+            "amount": "1.5000000",
+            "status": "SUCCESS",
+            "txHash": "94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd",
+            "toMasked": "GDMN...QUUU",
+            "receiverId": "f087377f-5d9b-4121-b145-59258dbcb094"
+          },
+          {
+            "id": "cc2ad44d-42fd-4898-b313-e059270630aa",
+            "amount": "2.0000000",
+            "status": "SUCCESS",
+            "txHash": "17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94",
+            "toMasked": "GA6R...ZCNA",
+            "receiverId": "fa23e3e3-5ca4-472a-899e-e428a6517fe7"
+          },
+          {
+            "id": "f73c47ab-b2a8-4822-bada-2d5ad1768c72",
+            "amount": "3.0000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GBFQ...FAVO",
+            "receiverId": "b162bf06-3b8b-496d-bc9c-cea329078e7d"
+          },
+          {
+            "id": "c9a9b7d9-a0a2-410d-a881-93677e312a1b",
+            "amount": "3.5000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GCKM...XAAX",
+            "receiverId": "ccc1039a-95cc-4fe6-a0ac-88d1a2b66eda"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-07T14:00:56.177Z",
+        "disbursementStatus": "STARTED",
+        "payments": [
+          {
+            "id": "f73c47ab-b2a8-4822-bada-2d5ad1768c72",
+            "amount": "3.0000000",
+            "status": "SUCCESS",
+            "txHash": "51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9",
+            "toMasked": "GBFQ...FAVO",
+            "receiverId": "b162bf06-3b8b-496d-bc9c-cea329078e7d"
+          },
+          {
+            "id": "ba1b92c4-b146-4fff-8481-6fd3ac2962a1",
+            "amount": "2.5000000",
+            "status": "SUCCESS",
+            "txHash": "28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41",
+            "toMasked": "GADZ...HMBZ",
+            "receiverId": "2c82fb99-4370-4d6d-b4d2-feaa52fc6359"
+          },
+          {
+            "id": "e5c26b2a-3427-4268-ad11-34710df8285d",
+            "amount": "1.5000000",
+            "status": "SUCCESS",
+            "txHash": "94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd",
+            "toMasked": "GDMN...QUUU",
+            "receiverId": "f087377f-5d9b-4121-b145-59258dbcb094"
+          },
+          {
+            "id": "cc2ad44d-42fd-4898-b313-e059270630aa",
+            "amount": "2.0000000",
+            "status": "SUCCESS",
+            "txHash": "17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94",
+            "toMasked": "GA6R...ZCNA",
+            "receiverId": "fa23e3e3-5ca4-472a-899e-e428a6517fe7"
+          },
+          {
+            "id": "c9a9b7d9-a0a2-410d-a881-93677e312a1b",
+            "amount": "3.5000000",
+            "status": "PENDING",
+            "txHash": null,
+            "toMasked": "GCKM...XAAX",
+            "receiverId": "ccc1039a-95cc-4fe6-a0ac-88d1a2b66eda"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-07T14:01:06.264Z",
+        "disbursementStatus": "COMPLETED",
+        "payments": [
+          {
+            "id": "c9a9b7d9-a0a2-410d-a881-93677e312a1b",
+            "amount": "3.5000000",
+            "status": "SUCCESS",
+            "txHash": "34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa",
+            "toMasked": "GCKM...XAAX",
+            "receiverId": "ccc1039a-95cc-4fe6-a0ac-88d1a2b66eda"
+          },
+          {
+            "id": "f73c47ab-b2a8-4822-bada-2d5ad1768c72",
+            "amount": "3.0000000",
+            "status": "SUCCESS",
+            "txHash": "51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9",
+            "toMasked": "GBFQ...FAVO",
+            "receiverId": "b162bf06-3b8b-496d-bc9c-cea329078e7d"
+          },
+          {
+            "id": "ba1b92c4-b146-4fff-8481-6fd3ac2962a1",
+            "amount": "2.5000000",
+            "status": "SUCCESS",
+            "txHash": "28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41",
+            "toMasked": "GADZ...HMBZ",
+            "receiverId": "2c82fb99-4370-4d6d-b4d2-feaa52fc6359"
+          },
+          {
+            "id": "e5c26b2a-3427-4268-ad11-34710df8285d",
+            "amount": "1.5000000",
+            "status": "SUCCESS",
+            "txHash": "94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd",
+            "toMasked": "GDMN...QUUU",
+            "receiverId": "f087377f-5d9b-4121-b145-59258dbcb094"
+          },
+          {
+            "id": "cc2ad44d-42fd-4898-b313-e059270630aa",
+            "amount": "2.0000000",
+            "status": "SUCCESS",
+            "txHash": "17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94",
+            "toMasked": "GA6R...ZCNA",
+            "receiverId": "fa23e3e3-5ca4-472a-899e-e428a6517fe7"
+          }
+        ]
+      }
+    ],
+    "payments": [
+      {
+        "id": "c9a9b7d9-a0a2-410d-a881-93677e312a1b",
+        "amount": "3.5000000",
+        "status": "SUCCESS",
+        "txHash": "34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa",
+        "toMasked": "GCKM...XAAX",
+        "receiverId": "ccc1039a-95cc-4fe6-a0ac-88d1a2b66eda",
+        "ledger": 5071614,
+        "createdAt": "2026-10-07T14:00:57Z",
+        "successful": true,
+        "operation": {
+          "from": "GBTC...Y6XJ",
+          "to": "GCKM...XAAX",
+          "amount": "3.5000000",
+          "asset": "USDC:GBBD...FLA5"
+        }
+      },
+      {
+        "id": "f73c47ab-b2a8-4822-bada-2d5ad1768c72",
+        "amount": "3.0000000",
+        "status": "SUCCESS",
+        "txHash": "51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9",
+        "toMasked": "GBFQ...FAVO",
+        "receiverId": "b162bf06-3b8b-496d-bc9c-cea329078e7d",
+        "ledger": 5071612,
+        "createdAt": "2026-10-07T14:00:47Z",
+        "successful": true,
+        "operation": {
+          "from": "GBTC...Y6XJ",
+          "to": "GBFQ...FAVO",
+          "amount": "3.0000000",
+          "asset": "USDC:GBBD...FLA5"
+        }
+      },
+      {
+        "id": "ba1b92c4-b146-4fff-8481-6fd3ac2962a1",
+        "amount": "2.5000000",
+        "status": "SUCCESS",
+        "txHash": "28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41",
+        "toMasked": "GADZ...HMBZ",
+        "receiverId": "2c82fb99-4370-4d6d-b4d2-feaa52fc6359",
+        "ledger": 5071610,
+        "createdAt": "2026-10-07T14:00:37Z",
+        "successful": true,
+        "operation": {
+          "from": "GBTC...Y6XJ",
+          "to": "GADZ...HMBZ",
+          "amount": "2.5000000",
+          "asset": "USDC:GBBD...FLA5"
+        }
+      },
+      {
+        "id": "e5c26b2a-3427-4268-ad11-34710df8285d",
+        "amount": "1.5000000",
+        "status": "SUCCESS",
+        "txHash": "94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd",
+        "toMasked": "GDMN...QUUU",
+        "receiverId": "f087377f-5d9b-4121-b145-59258dbcb094",
+        "ledger": 5071608,
+        "createdAt": "2026-10-07T14:00:27Z",
+        "successful": true,
+        "operation": {
+          "from": "GBTC...Y6XJ",
+          "to": "GDMN...QUUU",
+          "amount": "1.5000000",
+          "asset": "USDC:GBBD...FLA5"
+        }
+      },
+      {
+        "id": "cc2ad44d-42fd-4898-b313-e059270630aa",
+        "amount": "2.0000000",
+        "status": "SUCCESS",
+        "txHash": "17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94",
+        "toMasked": "GA6R...ZCNA",
+        "receiverId": "fa23e3e3-5ca4-472a-899e-e428a6517fe7",
+        "ledger": 5071609,
+        "createdAt": "2026-10-07T14:00:32Z",
+        "successful": true,
+        "operation": {
+          "from": "GBTC...Y6XJ",
+          "to": "GA6R...ZCNA",
+          "amount": "2.0000000",
+          "asset": "USDC:GBBD...FLA5"
+        }
+      }
+    ]
+  }
+}
