@@ -18,7 +18,8 @@ const NOW = new Date('2026-10-26T15:00:00Z');
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
-function tenantWith(disbursements: Array<{ id: string; name: string; status: string }>) {
+type FakePayment = { id: string; status: string; amount: string; disbursement: string };
+function tenantWith(disbursements: Array<{ id: string; name: string; status: string }>, payments: FakePayment[] = []) {
   const { fetchImpl, calls } = fakeFetch((r: Recorded) => {
     const u = new URL(r.url);
     if (u.pathname === '/disbursements') {
@@ -26,10 +27,20 @@ function tenantWith(disbursements: Array<{ id: string; name: string; status: str
       const data = disbursements.filter((d) => !wanted.length || wanted.includes(d.status));
       return { status: 200, body: data.length ? { data, pagination: { total: data.length } } : { data: [], pagination: {} } };
     }
+    if (u.pathname === '/payments') {
+      // one status per request (payment_query_validator.go:62-70), paged
+      const status = u.searchParams.get('status');
+      const limit = Number(u.searchParams.get('page_limit') ?? 20);
+      const page = Number(u.searchParams.get('page') ?? 1);
+      const all = payments.filter((p) => !status || p.status === status.toUpperCase()).map((p) => ({ id: p.id, status: p.status, amount: p.amount, disbursement: { id: p.disbursement } }));
+      const data = all.slice((page - 1) * limit, page * limit);
+      return { status: 200, body: { data, pagination: { total: all.length } } };
+    }
     return undefined;
   });
   return { client: new SdpTenantClient({ baseUrl: 'http://api:8000', tenantName: 'bridge', token: 't', fetch: fetchImpl }), calls };
 }
+const pay = (id: string, status: string, disbursement: string, amount = '1.0000000'): FakePayment => ({ id, status, amount, disbursement });
 
 const finished = (at: string, finalStatus: string, disbursementId = 'd-old'): RunLogEntry => ({ at, event: 'finished', tenant: 'bridge', network: 'testnet', disbursementId, total: '12.5000000', finalStatus });
 
@@ -38,34 +49,68 @@ describe('guardBatchStart: disbursements in flight', () => {
     const t = tenantWith([{ id: 'd1', name: 'ready one', status: 'READY' }, { id: 'd0', name: 'done', status: 'COMPLETED' }]);
     const seen = await guardBatchStart({ client: t.client, walletId: 'dw1', disbursementId: 'd1', runLog: [], now: NOW });
     expect(seen.inFlight).toEqual([]);
+    expect(seen.pausedAllowed).toEqual([]);
     const u = new URL(t.calls[0]!.url);
     expect(u.pathname).toBe('/disbursements');
     expect(u.searchParams.get('status')).toBe(IN_FLIGHT_DISBURSEMENT_STATUSES.join(','));
     expect(t.calls[0]?.headers['X-Wallet-Id']).toBe('dw1');
   });
 
-  it('refuses when another disbursement is STARTED', async () => {
+  it('STARTED refuses, without and with the flag', async () => {
     const t = tenantWith([{ id: 'd1', name: 'mine', status: 'READY' }, { id: 'd9', name: 'stage', status: 'STARTED' }]);
     const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BatchGuardError);
-    expect((err as BatchGuardError).reasons).toEqual(['the tenant has disbursement d9 ("stage") in STARTED; finish or cancel it first']);
+    expect((err as BatchGuardError).reasons).toEqual(['the tenant has disbursement d9 ("stage") in STARTED; no flag lifts this, pause or finish it first']);
+    const withFlag = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW, secondRunReason: 'drain' }).catch((e: unknown) => e);
+    expect((withFlag as BatchGuardError).reasons).toEqual(['the tenant has disbursement d9 ("stage") in STARTED; no flag lifts this, pause or finish it first']);
   });
 
-  it('refuses when another disbursement is PAUSED', async () => {
+  it('PAUSED refuses without the flag, pointing at --second-run', async () => {
     const t = tenantWith([{ id: 'd9', name: 'paused one', status: 'PAUSED' }]);
     const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW }).catch((e: unknown) => e);
-    expect((err as BatchGuardError).reasons[0]).toContain('in PAUSED');
+    expect((err as BatchGuardError).reasons).toEqual(['the tenant has disbursement d9 ("paused one") in PAUSED; pass --second-run "<reason>" to start another while it stays paused']);
+  });
+
+  for (const state of ['READY', 'PENDING'] as const) {
+    it(`PAUSED with a ${state} payment refuses even with the flag`, async () => {
+      const t = tenantWith([{ id: 'd9', name: 'paused one', status: 'PAUSED' }], [pay('p1', 'SUCCESS', 'd9'), pay('p2', state, 'd9'), pay('px', state, 'other')]);
+      const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW, secondRunReason: 'drain' }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BatchGuardError);
+      expect((err as BatchGuardError).reasons).toEqual([`paused disbursement d9 ("paused one") still has 1 payment(s) in ${state}, which can reach the network; wait for them to finish or fail`]);
+    });
+  }
+
+  it('PAUSED with every payment terminal starts with the flag and reports the paused commitments', async () => {
+    const t = tenantWith([{ id: 'd9', name: 'paused one', status: 'PAUSED' }], [pay('p1', 'SUCCESS', 'd9'), pay('p2', 'FAILED', 'd9'), pay('p3', 'CANCELED', 'd9'), pay('px', 'READY', 'other')]);
+    const seen = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW, secondRunReason: 'drain to treasury' });
+    expect(seen.pausedAllowed.map((d) => d.id)).toEqual(['d9']);
+    expect(seen.pausedInProgress).toEqual([]);
+    // the payments were asked for one in-progress status at a time, 100 per page
+    const paymentCalls = t.calls.filter((c) => c.url.includes('/payments'));
+    expect(paymentCalls.map((c) => new URL(c.url).searchParams.get('status'))).toEqual(['READY', 'PENDING', 'PAUSED']);
+    expect(paymentCalls.every((c) => new URL(c.url).searchParams.get('page_limit') === '100')).toBe(true);
+  });
+
+  it('PAUSED with its payments PAUSED (what a pause does to READY payments) starts with the flag; the paused amounts are reported for the drain', async () => {
+    const t = tenantWith([{ id: 'd9', name: 'paused one', status: 'PAUSED' }], [pay('p1', 'PAUSED', 'd9', '2.5000000'), pay('p2', 'PAUSED', 'd9', '3.0000000'), pay('p3', 'SUCCESS', 'd9', '1.0000000')]);
+    const seen = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW, secondRunReason: 'drain' });
+    expect(seen.pausedAllowed.map((d) => d.id)).toEqual(['d9']);
+    expect(seen.pausedInProgress.map((p) => [p.id, p.amount])).toEqual([['p1', '2.5000000'], ['p2', '3.0000000']]);
+  });
+
+  it('pages through more than 100 payments of one status', async () => {
+    const many = Array.from({ length: 150 }, (_, i) => pay(`q${i}`, 'PAUSED', i === 149 ? 'd9' : 'other'));
+    const t = tenantWith([{ id: 'd9', name: 'paused one', status: 'PAUSED' }], many);
+    const seen = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW, secondRunReason: 'drain' });
+    expect(seen.pausedInProgress.map((p) => p.id)).toEqual(['q149']);
+    const pausedPages = t.calls.filter((c) => c.url.includes('status=PAUSED')).map((c) => new URL(c.url).searchParams.get('page'));
+    expect(pausedPages).toEqual(['1', '2']);
   });
 
   it('refuses when the target itself is already in flight, pointing at --skip-start', async () => {
     const t = tenantWith([{ id: 'd1', name: 'mine', status: 'STARTED' }]);
     const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW }).catch((e: unknown) => e);
     expect((err as BatchGuardError).reasons).toEqual(['disbursement d1 is already STARTED; use --skip-start to follow it instead of starting it']);
-  });
-
-  it('the in-flight guard is not bypassed by a second-run reason', async () => {
-    const t = tenantWith([{ id: 'd9', name: 'stage', status: 'STARTED' }]);
-    await expect(guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW, secondRunReason: 'drain' })).rejects.toBeInstanceOf(BatchGuardError);
   });
 });
 
@@ -112,11 +157,12 @@ describe('RunLog file', () => {
     dirs.push(dir);
     const log = new RunLog(join(dir, 'nested', 'batch-run-log.jsonl'));
     expect(log.read()).toEqual([]);
-    log.append({ at: '2026-10-26T09:00:00Z', event: 'started', tenant: 'bridge', network: 'testnet', disbursementId: 'd1', total: '25.0000000', secondRunReason: 'drain to treasury' });
+    log.append({ at: '2026-10-26T09:00:00Z', event: 'started', tenant: 'bridge', network: 'testnet', disbursementId: 'd1', total: '25.0000000', secondRunReason: 'drain to treasury', pausedAllowed: ['d9'] });
     log.append(finished('2026-10-26T09:01:00Z', 'COMPLETED', 'd1'));
     const lines = readFileSync(log.path, 'utf8').trim().split('\n');
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]!).secondRunReason).toBe('drain to treasury');
+    expect(JSON.parse(lines[0]!).pausedAllowed).toEqual(['d9']);
     expect(log.read()).toHaveLength(2);
     expect(completedBatchesOn(log.read(), '2026-10-26').map((e) => e.disbursementId)).toEqual(['d1']);
     expect(completedBatchesOn(log.read(), '2026-10-27')).toEqual([]);
