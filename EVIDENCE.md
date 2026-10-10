@@ -616,6 +616,44 @@ callback paths were tried; the last attempts, two test dials on r1 at
 working day with a fresh tunnel and a fresh callback path, in the order
 r1, r2 (with one wrong PIN), r3 (then About), r5, r4 (one attempt).
 
+## 2026-10-10: Deliverable 4, part 3, second attempt: sandbox still failing, OUTSTANDING
+
+The recording session was retried on 10 October 2026 with a fresh
+cloudflared quick tunnel and a freshly rotated callback path. The capture
+server (`npm run ussd:capture`, record
+`test-output/ussd-capture/2026-10-10T11-20-47-584Z.json`, local) listened
+from 11:20 UTC. The public route was confirmed end to end before any dial:
+a POST through the tunnel to the callback path at 11:21:11 UTC reached the
+server and was answered in 2 ms with the expected `400 bad request` for a
+request without a phone number (`GATEWAY_REQUEST_INVALID`); a 404 or 502
+would have meant a wrong path or a dead tunnel. After the callback URL was
+saved in the sandbox dashboard, the test dial on r1 failed exactly as on
+7 October: the gateway's Sessions log shows Failed, 1 hop, no callback
+contact. The server received no request from the gateway at any time; the
+only other entries in the record are two 404 responses at 11:23:27 UTC.
+The recorder reads the body of every request before the path check, and
+both bodies were empty; a gateway callback always carries sessionId,
+phoneNumber and text, so these were not gateway requests on a wrong path
+(the 7 October records show the same empty-body 404 pairs at dial times).
+The callback path the server listened on and the path saved in the
+dashboard were compared by their last four characters and match, which
+rules out a stale clipboard when the callback URL was pasted.
+
+Second-channel diagnostic (Ramy Soliman, dashboard side): a second sandbox
+USSD channel on the same Africa's Talking account, pointed at the same
+callback URL, failed identically (Failed, 1 hop, no callback contact).
+Two channels failing the same way with a verified reachable callback
+places the fault on the account or gateway side, not in the bridge, the
+tunnel or the callback path. A support request has gone to Africa's
+Talking. The capture server and the tunnel were stopped at 11:32 UTC.
+
+The row stays OUTSTANDING, not failed. The five-recipient order is ready
+for when the sandbox is restored: r1 (returning path), r2 (one wrong PIN,
+then the right one), r3 (returning path, then About), r5 (returning
+path), r4 (one attempt, provisioned path). A fresh tunnel and a fresh
+callback path are used on that day, with the gateway test dial on r1
+first.
+
 ## 2026-10-07: Deliverable 4, part 4: adapter submodule re-pinned to the merge of adapter PR #15
 
 Adapter PR #15 was approved by ismo90 against its fix-round head
