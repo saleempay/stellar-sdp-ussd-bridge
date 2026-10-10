@@ -52,7 +52,7 @@ export interface ReadinessConfig {
   adminAccount: string;
   adminApiKey: string;
   tenant: TenantSpec;
-  /** The USDC issuer the tenant must carry. Defaults to the pinned testnet issuer. */
+  /** The USDC issuer the tenant must carry: the configured network's issuer (env.ts passes it). Defaults to the testnet issuer. */
   usdcIssuer?: string;
   /** How long to wait for the two health endpoints. */
   healthTimeoutMs?: number;
@@ -70,6 +70,8 @@ export interface ReadinessDeps {
    * implementation reads the container log. Throws when none is found.
    */
   readResetToken: (tenant: Tenant, email: string, sinceMs: number) => Promise<string>;
+  /** Operator prompt for the emailed MFA code; absent when MFA is disabled on the stack. */
+  mfaCode?: (email: string) => Promise<string>;
   sleep: (ms: number) => Promise<void>;
   now: () => number;
 }
@@ -188,7 +190,7 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   // (reset_password_handler.go:25-28). Skipped when the login already works.
   const client = await run('owner login', async () => {
     try {
-      const token = await unauthenticated.login(spec.ownerEmail, spec.ownerPassword);
+      const token = await unauthenticated.login(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
       results.push({ step: 'owner login', outcome: 'already', detail: `${spec.ownerEmail} logs in with the held password` });
       return unauthenticated.withToken(token);
     } catch (cause) {
@@ -198,7 +200,7 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
     await unauthenticated.forgotPassword(spec.ownerEmail);
     const resetToken = await deps.readResetToken(tenant, spec.ownerEmail, since);
     await unauthenticated.resetPassword(resetToken, spec.ownerPassword);
-    const token = await unauthenticated.login(spec.ownerEmail, spec.ownerPassword);
+    const token = await unauthenticated.login(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
     results.push({ step: 'owner login', outcome: 'done', detail: `password set for ${spec.ownerEmail} through the reset flow; login verified` });
     return unauthenticated.withToken(token);
   });
@@ -240,7 +242,7 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
     results.push({ step: 'user managed wallet', outcome: 'done', detail: `"${wallet.name}" id ${wallet.id} enabled` });
   });
 
-  // 8: USDC with the pinned testnet issuer is a tenant asset.
+  // 8: USDC with the configured issuer is a tenant asset.
   await run('usdc asset', async () => {
     const assets = await client.listAssets();
     const usdc = assets.find((a) => a.code === USDC_CODE && a.issuer === usdcIssuer);

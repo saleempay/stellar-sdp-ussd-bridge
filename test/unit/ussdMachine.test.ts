@@ -281,3 +281,30 @@ describe('account screen errors and other screens', () => {
     expect(session?.maskedHistory).toEqual(['1', '####', '####']);
   });
 });
+
+describe('closing line of screens 7 and 8 (configuration, L2)', () => {
+  it('a configured line replaces the contracted text on the account screen and About, and nowhere else', async () => {
+    const f = setup({ account: ACCOUNT, pin: PIN, view: { balance: '2.0000000', lastReceived: { amount: '2.0000000', createdAt: '2026-10-07T14:00:40Z' } } });
+    f.deps.closingLine = 'Demonstration service';
+    const a = f.dial('about');
+    await a();
+    const about = await a('2');
+    expect(about.text).toBe('Saleem, a payment service for basic phones.\nsaleem.digital\nDemonstration service');
+    const s = f.dial('acct');
+    expect((await s()).text).toBe(SCREENS.mainMenu().text);
+    expect((await s('1')).text).toBe('Enter your PIN');
+    const final = await s(PIN);
+    expect(final.text.split('\n')).toEqual([`Signed in as ${ACCOUNT.slice(0, 4)}..${ACCOUNT.slice(-4)}`, 'Balance 2.00 USDC', 'Last received 2.00 USDC, 7 Oct', 'Demonstration service']);
+    expect(final.text).not.toContain('Test only');
+  });
+
+  it('with no line configured, both screens carry the contracted text', async () => {
+    const f = setup({ account: ACCOUNT, pin: PIN });
+    const a = f.dial('about');
+    await a();
+    expect((await a('2')).text.endsWith('\nTest only, no funds move')).toBe(true);
+    const s = f.dial('acct');
+    await s(); await s('1');
+    expect((await s(PIN)).text.endsWith('\nTest only, no funds move')).toBe(true);
+  });
+});

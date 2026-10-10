@@ -30,10 +30,9 @@ import {
   BridgeError,
   FetchHorizon,
   JsonFilePendingStore,
-  TESTNET_HORIZON_URL,
-  TESTNET_NETWORK_PASSPHRASE,
-  TESTNET_USDC_ISSUER,
+  NetworkConfigError,
   USDC_CODE,
+  assertNetwork,
   formatProvisionReport,
   maskAccount,
   parseInputCsv,
@@ -61,10 +60,13 @@ try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.en
 for (const k of ['SPONSOR_PUBLIC_KEY', 'SPONSOR_SECRET_KEY']) {
   if (!env[k]) { console.error(`${k} missing in .env`); process.exit(2); }
 }
-const horizonUrl = env.HORIZON_URL || TESTNET_HORIZON_URL;
-const networkPassphrase = env.NETWORK_PASSPHRASE || TESTNET_NETWORK_PASSPHRASE;
-if (networkPassphrase !== TESTNET_NETWORK_PASSPHRASE) { console.error('this bridge runs on testnet only'); process.exit(2); }
-const asset = { code: env.ASSET_CODE || USDC_CODE, issuer: env.ASSET_ISSUER || TESTNET_USDC_ISSUER };
+// Boot assertion: testnet values must be the testnet constants; any other
+// network needs every value supplied and BRIDGE_ACKNOWLEDGE_REAL_FUNDS=yes.
+let network;
+try { network = assertNetwork(env); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+const horizonUrl = network.horizonUrl;
+const networkPassphrase = network.networkPassphrase;
+const asset = { code: env.ASSET_CODE || USDC_CODE, issuer: network.assetIssuer };
 
 let rows;
 try {
@@ -91,7 +93,7 @@ const deps = {
   paymentIdPrefix: basename(input).replace(/\.csv$/i, ''),
 };
 
-console.log(`sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows, data in ${dataDir}/`);
+console.log(`network ${network.networkType}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows, data in ${dataDir}/`);
 let report;
 try {
   report = await provisionRecipients(rows, deps);

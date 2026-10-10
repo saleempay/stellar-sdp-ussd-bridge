@@ -20,6 +20,7 @@ import {
   dashboardUrlFor,
   formatReport,
   loadEnvFile,
+  promptMfaCode,
   provisionTenant,
   readinessConfigFor,
   sdpConfigFromEnv,
@@ -92,6 +93,9 @@ const deps = {
   admin,
   tenantClient,
   readResetToken,
+  // With MFA enabled on the stack the SDP emails a code at login; the
+  // operator types it here. Nothing happens with MFA disabled.
+  mfaCode: promptMfaCode(),
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
 };

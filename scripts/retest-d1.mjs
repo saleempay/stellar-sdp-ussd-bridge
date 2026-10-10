@@ -27,6 +27,7 @@ import {
   TESTNET_USDC_ISSUER,
   loadEnvFile,
   maskAccount,
+  promptMfaCode,
   sdpConfigFromEnv,
 } from '../dist/index.js';
 
@@ -41,7 +42,7 @@ const outcome = async (fn) => { try { return { ok: true, value: await fn() }; } 
 
 async function login(tenant) {
   const c = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name });
-  return c.withToken(await c.login(tenant.ownerEmail, tenant.ownerPassword));
+  return c.withToken(await c.login(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() }));
 }
 const [bridgeSpec, scopeSpec] = cfg.tenants;
 const bridge = await login(bridgeSpec);
@@ -108,7 +109,7 @@ const directPay = async (client, walletId, label) => {
   });
   log(`direct payment from ${label}`, r);
 };
-async function tokenOf(client) { return client.login(client.tenantName === bridgeSpec.name ? bridgeSpec.ownerEmail : scopeSpec.ownerEmail, client.tenantName === bridgeSpec.name ? bridgeSpec.ownerPassword : scopeSpec.ownerPassword); }
+async function tokenOf(client) { return client.login(client.tenantName === bridgeSpec.name ? bridgeSpec.ownerEmail : scopeSpec.ownerEmail, client.tenantName === bridgeSpec.name ? bridgeSpec.ownerPassword : scopeSpec.ownerPassword, { mfaCode: promptMfaCode() }); }
 await directPay(bridge, second.id, 'second account (same tenant)');
 await directPay(other, undefined, 'other tenant');
 

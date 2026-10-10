@@ -14,13 +14,12 @@ import { join } from 'node:path';
 import {
   FetchHorizon,
   SdpTenantClient,
-  TESTNET_HORIZON_URL,
-  TESTNET_USDC_ISSUER,
   USDC_CODE,
   formatBatchReport,
   loadEnvFile,
   maskAccount,
   paymentsOf,
+  promptMfaCode,
   runBatch,
   sdpConfigFromEnv,
   selectDistributionWalletId,
@@ -34,16 +33,15 @@ if (!disbursementId) { console.error('usage: npm run sdp:batch -- --disbursement
 const checkOnly = args.includes('--check-only');
 const skipStart = args.includes('--skip-start');
 const timeoutMs = Number(opt('--timeout-minutes') ?? 10) * 60_000;
-const asset = { code: USDC_CODE, issuer: TESTNET_USDC_ISSUER };
-
 const cfg = sdpConfigFromEnv(loadEnvFile('sdp/.env'));
+const asset = { code: USDC_CODE, issuer: cfg.network.assetIssuer };
 const tenant = cfg.tenants[0];
 const anon = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name });
-const client = anon.withToken(await anon.login(tenant.ownerEmail, tenant.ownerPassword));
+const client = anon.withToken(await anon.login(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() }));
 const walletId = await selectDistributionWalletId(client);
 const accounts = await client.listDistributionWallets();
 const account = accounts.find((a) => a.id === walletId) ?? accounts[0];
-const horizon = new FetchHorizon(TESTNET_HORIZON_URL, { timeoutMs: 20_000 });
+const horizon = new FetchHorizon(cfg.network.horizonUrl, { timeoutMs: 20_000 });
 
 const d = await client.getDisbursement(disbursementId, walletId);
 // every page, and the count must equal the disbursement's rows

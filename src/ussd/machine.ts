@@ -62,6 +62,8 @@ export interface BridgeMachineDeps {
    */
   createAccount?: (msisdn: string) => Promise<{ accountId: string; creationTxHash?: string }>;
   msisdn: MsisdnInferenceConfig;
+  /** Closing line of screens 7 and 8; the contracted text when absent (closingLine.ts). */
+  closingLine?: string;
   now?: () => number;
   /** Event sink: state names and event codes only, never user input. */
   log?: (line: string) => void;
@@ -124,7 +126,7 @@ async function transition(
 ): Promise<Screen> {
   switch (session.state) {
     case 'welcome': {
-      if (input === '2') return SCREENS.about();
+      if (input === '2') return SCREENS.about(deps.closingLine);
       if (input !== '1') return SCREENS.invalidChoice(SCREENS.mainMenu());
       session.accountId = await deps.accounts.get(session.msisdn);
       const pinExists = await hasPin({ store: deps.pins }, session.msisdn);
@@ -242,7 +244,7 @@ async function renderAccount(
   try {
     const view = await deps.loadView(accountId);
     log(`session=${session.sessionId} event=accountScreen path=${path} hasLastReceived=${view.lastReceived !== undefined}`);
-    return SCREENS.account(accountId, view, new Date(now));
+    return SCREENS.account(accountId, view, new Date(now), deps.closingLine);
   } catch (err) {
     if (err instanceof AccountNotOnChainError) {
       log(`session=${session.sessionId} event=accountNotOnChain`);

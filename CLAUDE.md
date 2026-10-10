@@ -14,10 +14,14 @@ read or reference the `saleem-platform` repository.
 
 ## Network and secrets
 
-- Testnet only. No mainnet endpoint, key, asset, issuer or configuration
-  anywhere in this repository, in any branch.
-- No production signer and no custody provider. The reference signer from
-  the adapter is the only signer.
+- Testnet is the only network this repository configures. No mainnet
+  endpoint, key, asset, issuer or configuration anywhere in this
+  repository, in any branch. The code reads its network values from the
+  environment. A network other than testnet runs only with every value
+  supplied from outside this repository and an explicit acknowledgement.
+- No production signer and no custody provider in this repository. The
+  reference signer from the adapter is the only signer here. A signer may
+  be injected from outside this repository.
 - Never print or commit a secret: seeds, secret keys, JWTs, API keys,
   passwords, PINs, USSD callback paths, tunnel URLs, SDP admin credentials.
   `.env` files are gitignored. `.env.example` files hold names only.

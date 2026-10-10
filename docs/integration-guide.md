@@ -5,7 +5,9 @@ through the Stellar Disbursement Platform (SDP) with this bridge. No
 contact with Saleem is needed. Every command here was run from a clean
 clone on testnet; the runs are recorded in `EVIDENCE.md`.
 
-Testnet only. Nothing in this repository moves real money.
+Testnet is the only network this repository configures. Nothing in this
+repository moves real money. The network values come from the environment
+and every process asserts them at boot (`docs/sdp-setup.md`, section 9).
 
 ## What the bridge is
 
@@ -250,6 +252,17 @@ payment also shows that line; raise the scan depth in `accountView.ts` if
 your accounts are busier than that. Amounts are cut to two decimals, never
 rounded up; the date is the UTC date of the payment. Any Horizon failure
 within the budget shows "Service unavailable. Please try again later."
+
+### The closing line (`USSD_CLOSING_LINE`)
+
+Screens 7 and 8 end with a closing line. Unset or blank, it is the
+contracted text, "Test only, no funds move". Any other value is a menu
+change that needs written notice to Africa's Talking before production
+(walkthrough section 7). At boot the service refuses a value that would
+push either screen past the 160 character budget at the account screen's
+longest values, or that carries a character outside printable ASCII (no
+line breaks, accents, symbols or emoji; telcos cannot render them). The
+refusal names the variable and exits with code 2.
 
 ### PINs
 

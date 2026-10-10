@@ -179,3 +179,44 @@ describe('provisionTenant', () => {
     expect(detail).not.toContain('GABCDEFGHIJKLMNOPQRSTUVWXYZ234567');
   });
 });
+
+describe('owner login with MFA enabled on the stack', () => {
+  it('passes the prompt into both login calls of the reset flow and completes', async () => {
+    const { deps, state } = fakeSdp();
+    // Wrap the fake: /login answers the MFA message once the password is right; /mfa gives the token.
+    const inner = deps.tenantClient;
+    const asked: string[] = [];
+    const { fetchImpl } = fakeFetch((r) => {
+      const p = new URL(r.url).pathname;
+      if (p === '/health') return { status: 200, body: { status: 'pass' } };
+      if (p === '/login') { const b = JSON.parse(r.body!); return state.passwords.get(b.email) === b.password ? { status: 200, body: { message: 'MFA code sent to email. Check your inbox and spam folders.' } } : { status: 401, body: { error: 'bad' } }; }
+      if (p === '/mfa') return JSON.parse(r.body!).mfa_code === '246810' ? { status: 200, body: { token: 'tok' } } : { status: 401, body: { error: 'bad code' } };
+      if (p === '/forgot-password') { state.resetTokens.set(JSON.parse(r.body!).email, 'reset-tok-2'); return { status: 200, body: { message: 'maybe' } }; }
+      if (p === '/reset-password') { const b = JSON.parse(r.body!); const email = [...state.resetTokens.entries()].find(([, t]) => t === b.reset_token)?.[0]; if (!email) return { status: 400, body: { error: 'bad token' } }; state.passwords.set(email, b.password); state.resetTokens.delete(email); return { status: 200 }; }
+      return undefined;
+    });
+    const mfaClient = (name: string) => {
+      const real = inner(name);
+      const forAuth = new SdpTenantClient({ baseUrl: 'http://localhost:8000', tenantName: name, fetch: fetchImpl });
+      // login and the MFA leg go to the wrapper; everything after withToken goes to the fake SDP state.
+      return Object.assign(forAuth, { withToken: (t: string) => real.withToken(t) }) as SdpTenantClient;
+    };
+    const results = await provisionTenant(cfg, { ...deps, tenantClient: mfaClient, mfaCode: async (email) => { asked.push(email); return '246810'; } });
+    expect(results.map((r) => `${r.step}:${r.outcome}`)).toContain('owner login:done');
+    expect(asked).toEqual(['owner@bridge.local']);
+  });
+
+  it('without a prompt, an MFA-enabled stack fails the owner login step naming /mfa', async () => {
+    const { deps, state } = fakeSdp();
+    state.passwords.set('owner@bridge.local', 'pw-never-printed');
+    const { fetchImpl } = fakeFetch((r) => {
+      const p = new URL(r.url).pathname;
+      if (p === '/health') return { status: 200, body: { status: 'pass' } };
+      return p === '/login' ? { status: 200, body: { message: 'MFA code sent to email. Check your inbox and spam folders.' } } : undefined;
+    });
+    const err = await provisionTenant(cfg, { ...deps, tenantClient: (n) => new SdpTenantClient({ baseUrl: 'http://localhost:8000', tenantName: n, fetch: fetchImpl }) }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ReadinessError);
+    expect((err as ReadinessError).step).toBe('owner login');
+    expect((err as ReadinessError).message).toContain('/mfa');
+  });
+});

@@ -216,3 +216,67 @@ describe('uploadDisbursementFile', () => {
     expect(r.receiverWalletStatuses).toEqual(['REGISTERED']);
   });
 });
+
+describe('SdpTenantClient.login with multi-factor authentication (login_handler.go, mfa_handler.go at 7.0.0)', () => {
+  const base = { baseUrl: 'http://api:8000', tenantName: 'bridge' };
+  const MFA_MESSAGE = 'MFA code sent to email. Check your inbox and spam folders.';
+
+  it('with MFA disabled the flow is unchanged: one POST /login, the token, no prompt called', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { token: 'jwt.plain' } }));
+    let prompted = 0;
+    const token = await new SdpTenantClient({ ...base, fetch: fetchImpl }).login('op@b.local', 'pw', { mfaCode: async () => { prompted += 1; return '000000'; } });
+    expect(token).toBe('jwt.plain');
+    expect(calls).toHaveLength(1);
+    expect(prompted).toBe(0);
+  });
+
+  it('always sends a Device-ID header on /login, since the SDP requires it whenever MFA is on', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { token: 't' } }));
+    await new SdpTenantClient({ ...base, fetch: fetchImpl, deviceId: 'bridge-device-1' }).login('a', 'b');
+    expect(calls[0]?.headers['Device-ID']).toBe('bridge-device-1');
+    const { fetchImpl: f2, calls: c2 } = fakeFetch(() => ({ status: 200, body: { token: 't' } }));
+    await new SdpTenantClient({ ...base, fetch: f2 }).login('a', 'b');
+    expect(c2[0]?.headers['Device-ID']).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('when /login answers with the MFA message, asks the prompt for the code and posts it to /mfa with the same Device-ID', async () => {
+    const { fetchImpl, calls } = fakeFetch((r) => {
+      if (r.url.endsWith('/login')) return { status: 200, body: { message: MFA_MESSAGE } };
+      if (r.url.endsWith('/mfa')) return JSON.parse(r.body!).mfa_code === '482913' ? { status: 200, body: { token: 'jwt.mfa' } } : { status: 401, body: { error: 'Not authorized.' } };
+      return undefined;
+    });
+    const asked: string[] = [];
+    const client = new SdpTenantClient({ ...base, fetch: fetchImpl, deviceId: 'dev-7' });
+    const token = await client.login('op@b.local', 'pw', { mfaCode: async (email) => { asked.push(email); return '482913'; } });
+    expect(token).toBe('jwt.mfa');
+    expect(asked).toEqual(['op@b.local']);
+    expect(calls.map((c) => c.url)).toEqual(['http://api:8000/login', 'http://api:8000/mfa']);
+    expect(JSON.parse(calls[1]!.body!)).toEqual({ mfa_code: '482913', remember_me: false });
+    expect(calls[1]?.headers['Device-ID']).toBe('dev-7');
+    expect(calls[1]?.headers['SDP-Tenant-Name']).toBe('bridge');
+    expect(calls[1]?.headers.Authorization).toBeUndefined();
+  });
+
+  it('a wrong code is the SDP\'s 401 on /mfa, surfaced as SdpHttpError without the code in the message', async () => {
+    const { fetchImpl } = fakeFetch((r) => (r.url.endsWith('/login') ? { status: 200, body: { message: MFA_MESSAGE } } : { status: 401, body: { error: 'Not authorized.' } }));
+    const err = await new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b', { mfaCode: async () => '111111' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SdpHttpError);
+    expect((err as SdpHttpError).path).toBe('/mfa');
+    expect((err as SdpHttpError).status).toBe(401);
+    expect((err as SdpHttpError).message).not.toContain('111111');
+  });
+
+  it('without a prompt, a login that needs a code fails naming /mfa and makes no second request', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { message: MFA_MESSAGE } }));
+    const err = await new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SdpHttpError);
+    expect((err as SdpHttpError).path).toBe('/mfa');
+    expect((err as SdpHttpError).message).toContain('no prompt is available');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('a 200 with neither a token nor the MFA message is still an error', async () => {
+    const { fetchImpl } = fakeFetch(() => ({ status: 200, body: { message: 'something else' } }));
+    await expect(new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b', { mfaCode: async () => '1' })).rejects.toBeInstanceOf(SdpHttpError);
+  });
+});

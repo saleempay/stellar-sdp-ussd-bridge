@@ -7,6 +7,7 @@
  * The client takes `fetch` as a dependency so the offline tests can drive
  * it with a fake and assert the exact request shape.
  */
+import { randomUUID } from 'node:crypto';
 import { TENANT_HEADER, WALLET_ID_HEADER } from './facts.js';
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -258,6 +259,29 @@ export interface SdpTenantClientOptions {
   tenantName: string;
   token?: string;
   fetch?: FetchLike;
+  /**
+   * Value of the `Device-ID` header the SDP requires on POST /login and
+   * POST /mfa when MFA is enabled (login_handler.go:59-60,
+   * mfa_handler.go:35,48). Any stable opaque string; a random one is
+   * generated when absent. Ignored by the SDP when MFA is disabled.
+   */
+  deviceId?: string;
+}
+
+/** Header name, mfa_handler.go:35 at tag 7.0.0. */
+export const DEVICE_ID_HEADER = 'Device-ID';
+
+/** The message the SDP answers /login with when an emailed code is needed (login_handler.go:133-137). */
+export const MFA_CODE_SENT_MESSAGE = 'MFA code sent to email. Check your inbox and spam folders.';
+
+export interface LoginOptions {
+  /**
+   * Asked for the emailed verification code when the SDP requires one
+   * (MFA enabled and the device not remembered). The reference prompt
+   * reads it from standard input (`promptMfaCode`). Without a prompt, a
+   * login that needs a code fails with an SdpHttpError naming /mfa.
+   */
+  mfaCode?: (email: string) => Promise<string>;
 }
 
 export class SdpTenantClient {
@@ -265,12 +289,14 @@ export class SdpTenantClient {
   private readonly base: string;
   readonly tenantName: string;
   private readonly token: string | undefined;
+  private readonly deviceId: string;
 
   constructor(private readonly opts: SdpTenantClientOptions) {
     this.fetchImpl = opts.fetch ?? ((input, init) => fetch(input, init));
     this.base = opts.baseUrl;
     this.tenantName = opts.tenantName;
     this.token = opts.token;
+    this.deviceId = opts.deviceId ?? randomUUID();
   }
 
   /** The same client with a Bearer token attached. */
@@ -298,17 +324,38 @@ export class SdpTenantClient {
     }
   }
 
-  /** POST /login {email, password}; returns the token (login_handler.go:24-32). */
-  async login(email: string, password: string): Promise<string> {
+  /**
+   * POST /login {email, password}; returns the token (login_handler.go:24-32).
+   *
+   * With MFA disabled, or the device remembered, the SDP answers 200 with
+   * `{token}` (login_handler.go:130-132). Otherwise it emails a code and
+   * answers 200 with a message instead of a token (login_handler.go:133-137,
+   * 163-173); the token then comes from POST /mfa {mfa_code, remember_me}
+   * with the same Device-ID header (mfa_handler.go:18-22, 92, 112). Both
+   * requests carry Device-ID, which the SDP requires whenever MFA is on
+   * (login_handler.go:59-60, mfa_handler.go:48) and ignores otherwise.
+   */
+  async login(email: string, password: string, opts: LoginOptions = {}): Promise<string> {
     const res = await send(this.fetchImpl, this.base, {
       method: 'POST',
       path: '/login',
-      headers: this.headers({ 'Content-Type': 'application/json' }),
+      headers: this.headers({ 'Content-Type': 'application/json', [DEVICE_ID_HEADER]: this.deviceId }),
       body: JSON.stringify({ email, password }),
     });
-    const body = await json<{ token: string }>(res);
-    if (!body.token) throw new SdpHttpError('POST', '/login', res.status, 'response carried no token');
-    return body.token;
+    const body = await json<{ token?: string; message?: string }>(res);
+    if (body.token) return body.token;
+    if (body.message !== MFA_CODE_SENT_MESSAGE) throw new SdpHttpError('POST', '/login', res.status, 'response carried no token');
+    if (!opts.mfaCode) throw new SdpHttpError('POST', '/mfa', res.status, 'the SDP requires an emailed verification code and no prompt is available');
+    const code = await opts.mfaCode(email);
+    const mfa = await send(this.fetchImpl, this.base, {
+      method: 'POST',
+      path: '/mfa',
+      headers: this.headers({ 'Content-Type': 'application/json', [DEVICE_ID_HEADER]: this.deviceId }),
+      body: JSON.stringify({ mfa_code: code, remember_me: false }),
+    });
+    const verified = await json<{ token?: string }>(mfa);
+    if (!verified.token) throw new SdpHttpError('POST', '/mfa', mfa.status, 'response carried no token');
+    return verified.token;
   }
 
   /** POST /forgot-password {email} (forgot_password_handler.go:38-41); always 200. */

@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import type { ReadinessConfig, TenantSpec } from './readiness.js';
+import { assertNetwork, type NetworkFacts } from './network.js';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -39,6 +40,8 @@ export interface SdpEnvConfig {
   adminAccount: string;
   adminApiKey: string;
   tenants: TenantSpec[];
+  /** The network the stack runs on, after the boot assertion. */
+  network: NetworkFacts;
 }
 
 /**
@@ -59,7 +62,9 @@ export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
   ]);
   const port = env.PORT ?? '8000';
   const adminPort = env.ADMIN_PORT ?? '8003';
+  const network = assertNetwork(env);
   return {
+    network,
     apiUrl: env.SDP_API_URL ?? `http://localhost:${port}`,
     adminUrl: env.SDP_ADMIN_URL ?? `http://localhost:${adminPort}`,
     uiOrigin: env.SDP_UI_BASE_URL ?? 'http://localhost:3000',
@@ -97,5 +102,6 @@ export function readinessConfigFor(cfg: SdpEnvConfig, tenant: TenantSpec): Readi
     adminAccount: cfg.adminAccount,
     adminApiKey: cfg.adminApiKey,
     tenant,
+    usdcIssuer: cfg.network.assetIssuer,
   };
 }
