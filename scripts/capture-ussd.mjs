@@ -36,8 +36,9 @@ import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import {
-  ClosingLineError, NetworkConfigError, assessDialReadiness, captureBanner, createUssdServer, describeExchange, normaliseHostname,
-  parseQuickTunnelHostname, readinessReport, recordingListener, tunnelCommand, tunnelConfigFromEnv, tunnelStartNotice, ussdConfigFromEnv,
+  ClosingLineError, NetworkConfigError, SignerConfigError, assessDialReadiness, captureBanner, createUssdServer, describeExchange,
+  loadInjectedSigner, normaliseHostname, parseQuickTunnelHostname, readinessReport, recordingListener, sponsorSigning, tunnelCommand,
+  tunnelConfigFromEnv, tunnelStartNotice, ussdConfigFromEnv,
 } from '../dist/index.js';
 
 const args = process.argv.slice(2);
@@ -49,6 +50,15 @@ let env;
 try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.env not found'); process.exit(2); }
 let cfg;
 try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfigError || e instanceof ClosingLineError) { console.error(e.message); process.exit(2); } throw e; }
+// Creation on dial signs with the adapter's reference signer by default, or
+// with a signer injected through BRIDGE_SIGNER_MODULE (checked at boot).
+if (cfg.createOnDial) {
+  try {
+    const signing = await sponsorSigning({ ...env, ...process.env }, await loadInjectedSigner({ ...env, ...process.env }));
+    cfg = { ...cfg, signer: signing.signer, sponsorPublicKey: signing.sponsorPublicKey, sponsorSecretKey: undefined };
+    console.log(`signer: ${signing.injected ? 'injected (BRIDGE_SIGNER_MODULE)' : 'adapter reference signer'}`);
+  } catch (e) { if (e instanceof SignerConfigError) { console.error(e.message); process.exit(2); } throw e; }
+}
 if (!cfg.callbackPath) { console.error('USSD_CALLBACK_PATH is not set in .env (a long random segment, never printed)'); process.exit(2); }
 let tunnelCfg;
 try { tunnelCfg = externalUrl ? { mode: 'external', hostname: normaliseHostname(externalUrl) } : tunnelConfigFromEnv(env); } catch (e) { console.error(e.message); process.exit(2); }

@@ -25,16 +25,19 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parseEnv } from 'node:util';
-import { JsonFileAccountStore, JsonFilePinStore, LocalKeypairSigner } from 'stellar-ussd-sep10-adapter';
+import { JsonFileAccountStore, JsonFilePinStore } from 'stellar-ussd-sep10-adapter';
 import {
   BridgeError,
   CapConfigError,
   FetchHorizon,
   JsonFilePendingStore,
   NetworkConfigError,
+  SignerConfigError,
   USDC_CODE,
   assertNetwork,
   capsFromEnv,
+  loadInjectedSigner,
+  sponsorSigning,
   formatProvisionReport,
   maskAccount,
   parseInputCsv,
@@ -59,8 +62,15 @@ if (!input || !output) {
 
 let env;
 try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.env not found; run npm run sponsor:setup first'); process.exit(2); }
-for (const k of ['SPONSOR_PUBLIC_KEY', 'SPONSOR_SECRET_KEY']) {
-  if (!env[k]) { console.error(`${k} missing in .env`); process.exit(2); }
+// The signer: the adapter's reference signer over SPONSOR_SECRET_KEY by
+// default, or one injected through BRIDGE_SIGNER_MODULE (checked against the
+// adapter's Signer interface; SPONSOR_PUBLIC_KEY names the sponsor).
+let signing;
+try {
+  signing = await sponsorSigning({ ...env, ...process.env }, await loadInjectedSigner({ ...env, ...process.env }));
+} catch (e) {
+  console.error(e instanceof SignerConfigError ? e.message : String(e));
+  process.exit(2);
 }
 // Boot assertion: testnet values must be the testnet constants; any other
 // network needs every value supplied and BRIDGE_ACKNOWLEDGE_REAL_FUNDS=yes.
@@ -82,9 +92,7 @@ try {
   process.exit(2);
 }
 
-const signer = new LocalKeypairSigner();
-const sponsorPublicKey = signer.importSecret(env.SPONSOR_SECRET_KEY);
-if (sponsorPublicKey !== env.SPONSOR_PUBLIC_KEY) { console.error('SPONSOR_PUBLIC_KEY does not match SPONSOR_SECRET_KEY'); process.exit(2); }
+const { signer, sponsorPublicKey } = signing;
 mkdirSync(dataDir, { recursive: true });
 const deps = {
   horizon: new FetchHorizon(horizonUrl, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }),
@@ -99,7 +107,7 @@ const deps = {
   paymentIdPrefix: basename(input).replace(/\.csv$/i, ''),
 };
 
-console.log(`network ${network.networkType}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows within caps ${caps.maxPaymentUsdc}/${caps.maxBatchUsdc} USDC, data in ${dataDir}/`);
+console.log(`network ${network.networkType}, signer ${signing.injected ? 'injected' : 'adapter reference'}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows within caps ${caps.maxPaymentUsdc}/${caps.maxBatchUsdc} USDC, data in ${dataDir}/`);
 let report;
 try {
   report = await provisionRecipients(rows, deps);
