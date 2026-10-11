@@ -74,4 +74,8 @@ const evidence = {
 };
 writeFileSync(join(dir, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`evidence written to ${dir}/evidence.json`);
-process.exit(result.timedOut || result.payments.some((p) => p.status !== 'SUCCESS') ? 1 : 0);
+// The point of the step is on-chain confirmation, so a payment whose
+// confirmation found a mismatch, or whose transaction is not successful
+// on Horizon, fails the run as a non-SUCCESS status does.
+const unconfirmed = result.payments.some((p) => p.confirmError !== undefined || p.successful === false);
+process.exit(result.timedOut || unconfirmed || result.payments.some((p) => p.status !== 'SUCCESS') ? 1 : 0);
