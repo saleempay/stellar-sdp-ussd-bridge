@@ -40,7 +40,7 @@ describe.skipIf(!enabled)('D3 live: USSD on the Africa\'s Talking sandbox', () =
     const exchanges: Exchange[] = [];
     const events: string[] = [];
     const { listener } = createUssdServer({ ...cfg, log: (l) => events.push(`${new Date().toISOString()} ${l}`) });
-    server = createServer(recordingListener(listener, (e) => exchanges.push(e)));
+    server = createServer(recordingListener(listener, (e) => exchanges.push(e), { callbackPath: cfg.callbackPath }));
     await new Promise<void>((r) => server!.listen(Number(env.USSD_PORT ?? 8085), r));
     const { port } = server.address() as AddressInfo;
     console.log(captureBanner(port, cfg.callbackPath, process.env.TUNNEL_BASE_URL));

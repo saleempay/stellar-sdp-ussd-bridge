@@ -11,13 +11,17 @@
  * the path masked; the full value is never printed.
  *
  * Writes test-output/ussd-capture/<timestamp>.json (MSISDN masked, every
- * four-digit input masked, callback path masked). Stops on Ctrl-C or after
+ * four-digit input masked, callback path masked). Every request is recorded
+ * whatever its status, with method, path as segment lengths, whether the
+ * path matched the callback path, query presence, content type and length,
+ * user agent and the tunnel's forwarding headers, so a gateway callback can
+ * be told from a browser hit or a probe. Stops on Ctrl-C or after
  * --wait-minutes.
  */
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { captureBanner, createUssdServer, recordingListener, ussdConfigFromEnv } from '../dist/index.js';
+import { captureBanner, createUssdServer, describeExchange, recordingListener, ussdConfigFromEnv } from '../dist/index.js';
 
 const args = process.argv.slice(2);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
@@ -36,7 +40,13 @@ const outPath = `test-output/ussd-capture/${started}.json`;
 const flush = () => writeFileSync(outPath, `${JSON.stringify({ started, tunnelBaseUrl: tunnelUrl || null, exchanges, events }, null, 2)}\n`);
 
 const { listener } = createUssdServer({ ...cfg, log: (line) => { events.push({ at: new Date().toISOString(), line }); } });
-const server = createServer(recordingListener(listener, (e) => { exchanges.push(e); flush(); console.log(`${e.at} ${e.serverMs} ms  ${JSON.stringify(e.fields.text ?? '')} -> ${JSON.stringify(e.response).slice(0, 90)}`); }));
+const server = createServer(recordingListener(listener, (e) => {
+  exchanges.push(e);
+  flush();
+  // every request, 404s included: method, path as segment lengths, match, headers; never the path
+  console.log(describeExchange(e));
+  if (e.fields.text !== undefined) console.log(`  text=${JSON.stringify(e.fields.text)}`);
+}, { callbackPath: cfg.callbackPath }));
 const port = Number(env.USSD_PORT ?? 8085);
 server.listen(port, () => {
   console.log(captureBanner(port, cfg.callbackPath, tunnelUrl || undefined));
