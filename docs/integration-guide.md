@@ -36,6 +36,30 @@ the PIN policy, the session store and the gateway transport.
 See `docs/sdp-setup.md`: Docker runtime, `npm run sdp:accounts`,
 `npm run sdp:up`, the dashboard at `http://bridge.localhost:3000`.
 
+### The isolation boundary is the tenant, never the distribution account
+
+Design constraint for everything built on this bridge. Within one SDP
+tenant, distribution accounts scope what a caller can list, but they do
+not isolate receivers from direct payments. At 7.0.0 the receiver list
+is filtered by the scope rule (`internal/data/receivers.go:108-114`: the
+account the receiver was created under, or any account that has paid
+them), while a direct payment resolves the receiver by id with no scope
+filter (`internal/services/direct_payment_resolvers.go:365-371`) and
+checks the paying account's balance afterwards. In the retest recorded in
+`EVIDENCE.md` (Deliverable 1, "Retest: receiver scoping and batch status
+on 7.0.0") a payment from a second account of the same tenant to a
+receiver created under the first was refused by the balance check, not by
+scoping; had the second account held USDC, the payment would most likely
+have gone through and that account would then have gained list
+visibility of the receiver (phone number and wallet) under the scope
+rule's "has paid them" clause. Across tenants the receiver was not found
+(404).
+
+Therefore: map different clients, programmes or operators onto separate
+tenants, never onto distribution accounts of one tenant. A distribution
+account separates balances and listings for one operator; it does not
+keep one operator's recipients away from another operator's payments.
+
 ## 2. Provision recipients
 
 ```bash
