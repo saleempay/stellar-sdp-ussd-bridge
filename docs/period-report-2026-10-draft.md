@@ -1,7 +1,7 @@
 # Period report, draft: Stellar Instaward Application 2
 
-Prepared 7 October 2026 and refreshed 10 October 2026 for the Chapter
-Lead, by 5 Lanes Limited (Saleem). Plain English; every claim links to a
+Prepared 7 October 2026 and refreshed 10 and 11 October 2026 for the
+Chapter Lead, by 5 Lanes Limited (Saleem). Plain English; every claim links to a
 file in this repository, to GitHub, or to the Stellar test network.
 
 ## Period and start
@@ -42,9 +42,29 @@ and the checklist in
   #1, #3 on #2, #4 on #3), so they merge in order. Every one passes the
   automated checks (install, typecheck, offline tests, secret scan).
 - **Under review:** all four, review requested from Ramy Soliman
-  (rasoliman). The build lead, Ismael (ismo90), was invited to the
-  repository on 7 October and the invitation had not been accepted by
-  10 October, so his review cannot be requested until it is.
+  (rasoliman). The build lead, Ismael (ismo90), accepted the repository
+  invitation on 10 October and reviewed all four pull requests the same
+  day: four reviews and 22 inline comments, each checked against the SDP
+  source at 7.0.0. His open findings, by pull request: #1, five items to
+  fix before the later deliverables build on it (a forced re-generation
+  of the SDP secrets over an existing database volume, ports published on
+  every interface, a tenant accepted whatever its status, distribution
+  accounts not being an isolation boundary, the secret scan's scope) and
+  several smaller ones; #2, the sponsor and PIN surface not approved yet
+  (an ambiguous submission losing the account, recipient keys discarded
+  at exit, a partial output file that looks complete); #3, the PIN and
+  callback surface not approved yet (the submodule pin, a second account
+  creatable for one number on dial, creation on dial defaulting to on
+  with no cap); #4, the payments list read from one page and the Horizon
+  confirmation not tied to the payment. The review-fixes pull request
+  (branch `d5-review-fixes` into `d4-batch-evidence`) answers every
+  finding with one commit per finding under the rulings of 11 October:
+  provisioned accounts are receive-only with the reference signer and the
+  documents say so; creation on dial is off by default and capped;
+  synthetic numbers move to the non-assignable `+999` range; the tenant
+  is recorded as the isolation boundary; the remaining fixes are made as
+  he described them. Each of his 22 threads carries a reply naming the
+  commit or the ruling.
 - **The adapter (Application 1):** the one change the bridge needed on
   the adapter, [pull request #15](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/15),
   was approved by Ismael and merged on 7 October. It was merged as a
@@ -138,8 +158,8 @@ balance on the ledger now equals the amount in the file.
 
 - The demo video cut of the USSD sessions after the batch (the sessions
   themselves were captured on 11 October, evidence row 4.3).
-- Review and merge of the bridge's four pull requests, in order #1, #2,
-  #3, #4, by the project's two reviewers.
+- Review of the review-fixes pull request by both reviewers, then merge
+  of the bridge's pull requests in order #1, #2, #3, #4 with the fixes.
 - Merge of the adapter's note pull request #17.
 - Sending the written notice to Africa's Talking on the walkthrough
   deviation and additions (drafted; Ramy Soliman's step).
