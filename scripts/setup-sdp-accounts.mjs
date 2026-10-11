@@ -5,11 +5,17 @@
  * from sdp/.env.example. It prints masked public addresses and the
  * Friendbot transaction hash. It never prints a secret.
  *
- * Refuses to overwrite an existing sdp/.env unless --force is given.
+ * Refuses to overwrite an existing sdp/.env unless --force is given, and
+ * refuses --force while the stack's Postgres volume still exists: the two
+ * encryption passphrases in sdp/.env decrypt the tenant distribution keys
+ * stored in that volume (helmchart/sdp/README.md:277,356 at SDP 7.0.0), so
+ * new passphrases over an old volume leave every tenant unable to sign.
+ * Run `npm run sdp:down -- --reset` first.
  *
  * Usage: npm run sdp:accounts [-- --force]
  */
 import { Keypair } from '@stellar/stellar-sdk';
+import { spawnSync } from 'node:child_process';
 import { randomBytes, randomInt, generateKeyPairSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -21,6 +27,31 @@ const force = process.argv.includes('--force');
 if (existsSync(ENV_PATH) && !force) {
   console.error(`${ENV_PATH} already exists. Re-run with --force to replace it (the old accounts are abandoned).`);
   process.exit(2);
+}
+
+/**
+ * The Compose volume name, as sdp/docker-compose.yml builds it:
+ * ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-testnet. The project name
+ * is read from the existing sdp/.env, then the environment, then the default.
+ */
+function postgresVolumeName() {
+  let fromEnvFile;
+  if (existsSync(ENV_PATH)) {
+    const m = /^COMPOSE_PROJECT_NAME=(.*)$/m.exec(readFileSync(ENV_PATH, 'utf8'));
+    if (m) fromEnvFile = m[1].trim().replace(/^["']|["']$/g, '');
+  }
+  const project = fromEnvFile || process.env.COMPOSE_PROJECT_NAME || 'sdp-bridge';
+  return `${project}_postgres-db-testnet`;
+}
+
+if (force) {
+  const volume = postgresVolumeName();
+  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { stdio: 'ignore' });
+  // ENOENT (no docker binary) means no stack can be running on this machine.
+  if (inspect.status === 0) {
+    console.error(`--force refused: the Docker volume ${volume} still exists. Its tenant distribution keys are encrypted under the passphrases in the current ${ENV_PATH}; new passphrases would leave every tenant unable to sign. Run \`npm run sdp:down -- --reset\` first, then re-run with --force.`);
+    process.exit(2);
+  }
 }
 
 const mask = (a) => `${a.slice(0, 4)}...${a.slice(-4)}`;
