@@ -12,8 +12,10 @@
  *
  * Prints masked phones and accounts, full transaction hashes, and the
  * SHA-256 of the output file. Never prints a secret. Exit 0 when every row
- * is created, trustline_added or unchanged with no PIN refused; 1 otherwise;
- * 2 on a configuration or input file error (nothing sent).
+ * is created, trustline_added or unchanged with no PIN refused; 1 otherwise
+ * (a failed or uncertain row); 2 on a configuration or input file error
+ * (nothing sent). An uncertain row names an account whose creation may have
+ * landed; data/pending-creations.json keeps it for the next run to check.
  */
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -22,6 +24,7 @@ import { JsonFileAccountStore, JsonFilePinStore, LocalKeypairSigner } from 'stel
 import {
   BridgeError,
   FetchHorizon,
+  JsonFilePendingStore,
   TESTNET_HORIZON_URL,
   TESTNET_NETWORK_PASSPHRASE,
   TESTNET_USDC_ISSUER,
@@ -72,6 +75,8 @@ const deps = {
   signer,
   accountStore: new JsonFileAccountStore(join(dataDir, 'accounts.json')),
   pinStore: allowPinColumn ? new JsonFilePinStore(join(dataDir, 'pins.json')) : undefined,
+  // written before each creation is submitted; see src/provision/pending.ts
+  pendingStore: new JsonFilePendingStore(join(dataDir, 'pending-creations.json')),
   sponsorPublicKey,
   asset,
   networkPassphrase,
@@ -92,5 +97,5 @@ writeFileSync(output, csv);
 const hash = sha256Hex(csv);
 console.log(`wrote ${output}: ${report.sdpRows.length} rows, sha256 ${hash}`);
 appendFileSync(join(dataDir, 'provision-log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), input: basename(input), output, sha256: hash, counts: report.counts, outcomes: report.outcomes.map(({ accountId: _a, ...o }) => o) })}\n`);
-const ok = report.counts.failed === 0 && report.counts.pinRefused === 0;
+const ok = report.counts.failed === 0 && report.counts.uncertain === 0 && report.counts.pinRefused === 0;
 process.exit(ok ? 0 : 1);

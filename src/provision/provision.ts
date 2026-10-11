@@ -11,6 +11,14 @@
  * - PIN: a record in the PIN store is never replaced
  * - output: a pure function of the rows and the stores
  *
+ * Ambiguous submissions: a creation whose submission times out, or that
+ * Horizon answers with a 5xx or without result codes, may have landed. A
+ * pending record (number, account) is written before the submission; on
+ * such a failure the account is read from Horizon before the row fails.
+ * Exists: adopted as created. Absent: the row fails as before. Unreadable:
+ * the row is `uncertain`, carries the account id, and the pending record
+ * stays so the next run checks it first instead of creating again.
+ *
  * Rows run one after another (the sponsor's sequence number serialises
  * them anyway). A failing row is reported and the next row runs.
  */
@@ -36,6 +44,7 @@ import {
 } from 'stellar-ussd-sep10-adapter';
 import {
   BridgeError,
+  CreationUncertainError,
   HorizonTimeoutError,
   InvalidPhoneNumberError,
   PinInputError,
@@ -44,7 +53,8 @@ import {
   TrustlineFailureError,
   UNDERFUNDED_RESULT_CODES,
 } from './errors.js';
-import { spendableXlm, type HorizonAccountRecord } from './horizon.js';
+import { HorizonResponseError, spendableXlm, type HorizonAccountRecord } from './horizon.js';
+import type { PendingCreationStore } from './pending.js';
 import { maskPhone, type InputRow, type ProvisionReport, type RowOutcome, type SdpRow } from './types.js';
 import { maskAccount } from '../sdp/facts.js';
 
@@ -54,6 +64,8 @@ export interface ProvisionDeps {
   accountStore: AccountStore;
   /** Needed only when rows carry a PIN. */
   pinStore?: PinStore;
+  /** Pending creations, checked before creating and written before submitting. Strongly recommended; see pending.ts. */
+  pendingStore?: PendingCreationStore;
   sponsorPublicKey: string;
   asset: { code: string; issuer: string };
   networkPassphrase: string;
@@ -105,6 +117,44 @@ function resultCodes(err: unknown): string[] {
 
 function underfunded(err: unknown): boolean {
   return resultCodes(err).some((c) => UNDERFUNDED_RESULT_CODES.has(c));
+}
+
+/**
+ * The network gave no verdict: a deadline, a Horizon 5xx, or a submission
+ * failure that carries no result codes. The transaction may have landed.
+ * (The adapter wraps a non-Horizon submission error into a
+ * TransactionFailedError without codes, so that case is read from the
+ * absence of codes.)
+ */
+export function isNonDefinitiveSubmission(err: unknown): boolean {
+  if (isTimeout(err)) return true;
+  if (err instanceof HorizonResponseError) return err.status >= 500;
+  if (err instanceof TransactionFailedError) {
+    return !err.transactionResultCode && !(err.operationResultCodes ?? []).length;
+  }
+  return false;
+}
+
+type Probe = 'exists' | 'absent' | 'unknown';
+
+/** Whether an account exists on chain; `unknown` when Horizon could not be read. */
+async function probeAccount(deps: ProvisionDeps, accountId: string): Promise<Probe> {
+  try {
+    await deps.horizon.loadAccount(accountId);
+    return 'exists';
+  } catch (err) {
+    return isHorizonNotFound(err) ? 'absent' : 'unknown';
+  }
+}
+
+function describe(err: unknown): string {
+  const m = err instanceof Error ? err.message : String(err);
+  return m.length > 120 ? `${m.slice(0, 120)}...` : m;
+}
+
+function uncertain(base: RowOutcome, accountId: string, detail: string): RowOutcome {
+  const e = new CreationUncertainError(base.rowIndex, accountId, detail);
+  return { ...base, status: 'uncertain', accountId, accountMasked: maskAccount(accountId), errorCode: e.code, message: e.message };
 }
 
 /**
@@ -214,37 +264,75 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
     }
   } else {
     let newAccountId: string | undefined;
-    try {
-      newAccountId = await deps.signer.createAccountKey();
-      const result = await createSponsoredAccount({
-        horizon: deps.horizon,
-        networkPassphrase: deps.networkPassphrase,
-        sponsorPublicKey: deps.sponsorPublicKey,
-        newAccountId,
-        signer: deps.signer,
-        asset: deps.asset,
-      });
-      base.accountId = newAccountId;
-      base.accountMasked = maskAccount(newAccountId);
-      base.txHash = result.hash;
-      if (result.ledger !== undefined) base.ledger = result.ledger;
-    } catch (err) {
-      const t = asTimeout(err);
-      if (t) return fail(base, new HorizonTimeoutError(t.operation, t.timeoutMs, row.rowIndex));
-      if (err instanceof AccountNotFoundError) return fail(base, new SponsorUnderfundedError(`sponsor ${maskAccount(deps.sponsorPublicKey)} does not exist on this network`, undefined, undefined, row.rowIndex));
-      if (underfunded(err)) return fail(base, new SponsorUnderfundedError(`network rejected the creation: ${resultCodes(err).join(', ')}`, undefined, undefined, row.rowIndex));
-      if (err instanceof TrustlineMissingError || (err instanceof TransactionFailedError && (err.operationResultCodes ?? [])[2] !== undefined && (err.operationResultCodes ?? [])[2] !== 'op_success')) {
-        return fail(base, trustlineError(row.rowIndex, err));
+    let adopted = false;
+    let note: string | undefined;
+
+    // A pending record from an earlier run names an account that may exist.
+    const pending = await deps.pendingStore?.get(msisdn);
+    if (pending) {
+      const probe = await probeAccount(deps, pending.accountId);
+      if (probe === 'exists') {
+        newAccountId = pending.accountId;
+        adopted = true;
+        note = `adopted from the pending record of ${pending.at}: the creation had landed; the transaction hash is not known`;
+      } else if (probe === 'unknown') {
+        return uncertain(base, pending.accountId, `the pending record of ${pending.at} names this account and Horizon could not be read to confirm it; reconcile or re-run when Horizon answers`);
+      } else {
+        await deps.pendingStore?.delete(msisdn);
       }
-      return fail(base, new ResolverFailureError(row.rowIndex, `account creation failed: ${(err as Error).message}`, undefined, { cause: err }));
     }
+
+    if (!adopted) {
+      try {
+        newAccountId = await deps.signer.createAccountKey();
+        await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date().toISOString() });
+        const result = await createSponsoredAccount({
+          horizon: deps.horizon,
+          networkPassphrase: deps.networkPassphrase,
+          sponsorPublicKey: deps.sponsorPublicKey,
+          newAccountId,
+          signer: deps.signer,
+          asset: deps.asset,
+        });
+        base.txHash = result.hash;
+        if (result.ledger !== undefined) base.ledger = result.ledger;
+      } catch (err) {
+        if (newAccountId !== undefined && isNonDefinitiveSubmission(err)) {
+          const probe = await probeAccount(deps, newAccountId);
+          if (probe === 'exists') {
+            adopted = true;
+            note = `confirmed on chain after an ambiguous submission (${describe(err)}); the transaction hash is not known`;
+          } else if (probe === 'unknown') {
+            return uncertain(base, newAccountId, `ambiguous submission (${describe(err)}) and Horizon could not be read to confirm the account; reconcile or re-run when Horizon answers`);
+          }
+          // absent: the creation did not land, so the row fails as before
+        }
+        if (!adopted) {
+          if (newAccountId !== undefined) await deps.pendingStore?.delete(msisdn);
+          const t = asTimeout(err);
+          if (t) return fail(base, new HorizonTimeoutError(t.operation, t.timeoutMs, row.rowIndex));
+          if (err instanceof AccountNotFoundError) return fail(base, new SponsorUnderfundedError(`sponsor ${maskAccount(deps.sponsorPublicKey)} does not exist on this network`, undefined, undefined, row.rowIndex));
+          if (underfunded(err)) return fail(base, new SponsorUnderfundedError(`network rejected the creation: ${resultCodes(err).join(', ')}`, undefined, undefined, row.rowIndex));
+          if (err instanceof TrustlineMissingError || (err instanceof TransactionFailedError && (err.operationResultCodes ?? [])[2] !== undefined && (err.operationResultCodes ?? [])[2] !== 'op_success')) {
+            return fail(base, trustlineError(row.rowIndex, err));
+          }
+          return fail(base, new ResolverFailureError(row.rowIndex, `account creation failed: ${(err as Error).message}`, undefined, { cause: err }));
+        }
+      }
+    }
+
+    base.accountId = newAccountId;
+    base.accountMasked = maskAccount(newAccountId);
     try {
-      await deps.accountStore.put(msisdn, newAccountId);
+      await deps.accountStore.put(msisdn, newAccountId!);
     } catch (err) {
-      const e = new RegistrationFailedError(newAccountId, msisdn, err);
+      // the pending record stays: the next run adopts the account from it
+      const e = new RegistrationFailedError(newAccountId!, msisdn, err);
       return fail(base, new ResolverFailureError(row.rowIndex, `account ${maskAccount(newAccountId)} was created on chain but the mapping could not be written; reconcile before re-running`, newAccountId, { cause: e }));
     }
+    await deps.pendingStore?.delete(msisdn);
     base.status = 'created';
+    if (note) base.message = note;
   }
 
   const pinResult = await bindPin(row, msisdn, deps);
@@ -278,7 +366,7 @@ export async function provisionRecipients(rows: InputRow[], deps: ProvisionDeps)
   for (const row of rows) {
     const outcome = await provisionRow(row, deps);
     outcomes.push(outcome);
-    if (outcome.status !== 'failed' && outcome.accountId) {
+    if (outcome.status !== 'failed' && outcome.status !== 'uncertain' && outcome.accountId) {
       sdpRows.push({
         phone: normalizeMsisdn(row.phone),
         walletAddress: outcome.accountId,
@@ -294,6 +382,7 @@ export async function provisionRecipients(rows: InputRow[], deps: ProvisionDeps)
     trustlineAdded: outcomes.filter((o) => o.status === 'trustline_added').length,
     unchanged: outcomes.filter((o) => o.status === 'unchanged').length,
     failed: outcomes.filter((o) => o.status === 'failed').length,
+    uncertain: outcomes.filter((o) => o.status === 'uncertain').length,
     pinRefused: outcomes.filter((o) => o.pin === 'refused').length,
   };
   return { outcomes, counts, sdpRows };
@@ -309,10 +398,10 @@ export function formatProvisionReport(report: ProvisionReport): string {
       (o.accountMasked ?? '').padEnd(12),
       `pin:${o.pin}`.padEnd(12),
       o.txHash ? `tx ${o.txHash}${o.ledger ? ` ledger ${o.ledger}` : ''}` : '',
-      o.errorCode ? `${o.errorCode}: ${o.message}` : '',
+      o.errorCode ? `${o.errorCode}: ${o.message}` : (o.message ?? ''),
     ].join('  ').trimEnd(),
   );
   const c = report.counts;
-  lines.push(`created ${c.created}, trustline added ${c.trustlineAdded}, unchanged ${c.unchanged}, failed ${c.failed}, pin refused ${c.pinRefused}`);
+  lines.push(`created ${c.created}, trustline added ${c.trustlineAdded}, unchanged ${c.unchanged}, failed ${c.failed}, uncertain ${c.uncertain}, pin refused ${c.pinRefused}`);
   return lines.join('\n');
 }

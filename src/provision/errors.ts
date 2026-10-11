@@ -77,6 +77,22 @@ export class HorizonTimeoutError extends BridgeError {
   }
 }
 
+/**
+ * The creation was submitted, the network gave no verdict (timeout, 5xx,
+ * no result codes), and the account could not be checked on chain either.
+ * The row carries the account id so the operator can reconcile; the
+ * pending record is kept for the next run to check.
+ */
+export class CreationUncertainError extends BridgeError {
+  constructor(
+    rowIndex: number,
+    readonly accountId: string,
+    detail: string,
+  ) {
+    super('creation_uncertain', detail, rowIndex);
+  }
+}
+
 /** The optional PIN input for a row is malformed or on the weak list. */
 export class PinInputError extends BridgeError {
   constructor(rowIndex: number, detail: string) {

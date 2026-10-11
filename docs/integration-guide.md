@@ -82,6 +82,16 @@ one by one with a code (`invalid_phone`, `resolver_failure`,
 testnet account in `.env`; the run is refused up front when it cannot pay
 for every row.
 
+A creation whose submission gets no verdict from the network (a timeout,
+a Horizon 5xx, or no result codes) may still have landed. The command
+writes `data/pending-creations.json` (number, account) before each
+submission and, on such a failure, reads the account from Horizon before
+the row fails: found, the row is `created` and mapped; absent, the row
+fails as above; unreadable, the row is `uncertain` (`creation_uncertain`)
+with the account id, is left out of the SDP file, and its pending record
+is checked first by the next run, so the same number is never provisioned
+twice. Exit code 1 covers uncertain rows as it does failed ones.
+
 No PIN is set by provisioning. Recipients set their PIN on their first
 dial. The optional `pin` column exists only for the automated testnet run;
 the command refuses it unless you pass `--allow-pin-column`, and a file

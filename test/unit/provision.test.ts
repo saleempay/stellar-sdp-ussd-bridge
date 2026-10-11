@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { verifyPin } from 'stellar-ussd-sep10-adapter';
 import { provisionRecipients, SponsorUnderfundedError, type InputRow, type ProvisionDeps } from '../../src/provision/index.js';
-import { EXISTING, FakeHorizon, FakeSigner, GONE, NETWORK, SPONSOR, USDC, rejection, stores, timeout } from './provisionFakes.js';
+import { EXISTING, FakeHorizon, FakeSigner, GONE, NETWORK, SPONSOR, USDC, rejection, serverError, stores, timeout } from './provisionFakes.js';
 
 function setup(opts: { sponsorXlm?: string } = {}) {
   const horizon = new FakeHorizon();
@@ -73,7 +73,7 @@ describe('provisionRecipients', () => {
       ['created', undefined],
     ]);
     expect(report.sdpRows.map((r) => r.id)).toEqual(['r1', 'r4']);
-    expect(report.counts).toEqual({ created: 2, trustlineAdded: 0, unchanged: 0, failed: 2, pinRefused: 0 });
+    expect(report.counts).toEqual({ created: 2, trustlineAdded: 0, unchanged: 0, failed: 2, uncertain: 0, pinRefused: 0 });
   });
 
   it('refuses the whole run before any transaction when the sponsor cannot pay for it', async () => {
@@ -114,6 +114,97 @@ describe('provisionRecipients', () => {
     const report = await provisionRecipients([rows[0]!], deps);
     expect(report.outcomes[0]?.errorCode).toBe('resolver_failure');
     expect(report.outcomes[0]?.message).toContain('reconcile');
+  });
+});
+
+describe('ambiguous submissions (timeout, 5xx, no result codes)', () => {
+  const row = rows[0]!;
+
+  it('a timeout after the creation landed: the account is read back, adopted, mapped, and never created twice', async () => {
+    const { horizon, signer, deps, accountStore, pendingStore } = setup();
+    horizon.nextErrors = [timeout('submitTransaction')];
+    horizon.landOnNextError = () => signer.lastCreated;
+    const first = await provisionRecipients([row], deps);
+    const o = first.outcomes[0]!;
+    expect(o.status).toBe('created');
+    expect(o.errorCode).toBeUndefined();
+    expect(o.accountId).toBe(signer.lastCreated);
+    expect(o.txHash).toBeUndefined();
+    expect(o.message).toContain('confirmed on chain after an ambiguous submission');
+    expect(await accountStore.get(row.phone)).toBe(signer.lastCreated);
+    expect(await pendingStore.get(row.phone)).toBeUndefined();
+    expect(first.sdpRows.map((r) => r.walletAddress)).toEqual([signer.lastCreated]);
+    const second = await provisionRecipients([row], deps);
+    expect(second.outcomes[0]?.status).toBe('unchanged');
+    expect(horizon.submissions).toHaveLength(0);
+  });
+
+  it('a timeout with nothing landed: the row fails as horizon_timeout, the pending record is cleared, the next run creates', async () => {
+    const { horizon, deps, pendingStore, accountStore } = setup();
+    horizon.nextErrors = [timeout('submitTransaction')];
+    const first = await provisionRecipients([row], deps);
+    expect(first.outcomes[0]?.errorCode).toBe('horizon_timeout');
+    expect(first.outcomes[0]?.status).toBe('failed');
+    expect(await pendingStore.get(row.phone)).toBeUndefined();
+    expect(await accountStore.get(row.phone)).toBeUndefined();
+    const second = await provisionRecipients([row], deps);
+    expect(second.outcomes[0]?.status).toBe('created');
+    expect(horizon.submissions).toHaveLength(1);
+  });
+
+  it('a 5xx on submission is non-definitive too: the landed account is adopted', async () => {
+    const { horizon, signer, deps } = setup();
+    horizon.nextErrors = [serverError(503)];
+    horizon.landOnNextError = () => signer.lastCreated;
+    const report = await provisionRecipients([row], deps);
+    expect(report.outcomes[0]?.status).toBe('created');
+    expect(report.outcomes[0]?.accountId).toBe(signer.lastCreated);
+  });
+
+  it('a timeout and then an unreadable Horizon: uncertain with the account id, no SDP row, the pending record kept; a later run adopts it', async () => {
+    const { horizon, signer, deps, pendingStore, accountStore } = setup();
+    horizon.nextErrors = [timeout('submitTransaction')];
+    horizon.landOnNextError = () => signer.lastCreated;
+    signer.onCreate = (id) => horizon.failLoadFor.set(id, timeout('loadAccount'));
+    const first = await provisionRecipients([row], deps);
+    const o = first.outcomes[0]!;
+    expect(o.status).toBe('uncertain');
+    expect(o.errorCode).toBe('creation_uncertain');
+    expect(o.accountId).toBe(signer.lastCreated);
+    expect(o.message).toContain('reconcile');
+    expect(first.sdpRows).toEqual([]);
+    expect(first.counts.uncertain).toBe(1);
+    expect(first.counts.failed).toBe(0);
+    expect((await pendingStore.get(row.phone))?.accountId).toBe(signer.lastCreated);
+    expect(await accountStore.get(row.phone)).toBeUndefined();
+    // Horizon is back: the pending record is checked first and adopted, nothing is submitted
+    horizon.failLoadFor.clear();
+    const created = signer.lastCreated;
+    const second = await provisionRecipients([row], deps);
+    expect(second.outcomes[0]?.status).toBe('created');
+    expect(second.outcomes[0]?.accountId).toBe(created);
+    expect(second.outcomes[0]?.message).toContain('pending record');
+    expect(await accountStore.get(row.phone)).toBe(created);
+    expect(await pendingStore.get(row.phone)).toBeUndefined();
+    expect(horizon.submissions).toHaveLength(0);
+  });
+
+  it('a stale pending record whose account never landed is forgotten and a fresh creation runs', async () => {
+    const { horizon, deps, pendingStore } = setup();
+    await pendingStore.put(row.phone, { accountId: GONE, at: '2026-10-10T00:00:00Z' });
+    const report = await provisionRecipients([row], deps);
+    expect(report.outcomes[0]?.status).toBe('created');
+    expect(report.outcomes[0]?.accountId).not.toBe(GONE);
+    expect(horizon.submissions).toHaveLength(1);
+    expect(await pendingStore.get(row.phone)).toBeUndefined();
+  });
+
+  it('a definitive rejection never reads the account back and clears the pending record', async () => {
+    const { horizon, deps, pendingStore } = setup();
+    horizon.nextErrors = [rejection('tx_failed', ['op_success', 'op_success', 'op_no_trust'])];
+    const report = await provisionRecipients([row], deps);
+    expect(report.outcomes[0]?.errorCode).toBe('trustline_failure');
+    expect(await pendingStore.get(row.phone)).toBeUndefined();
   });
 });
 

@@ -12,7 +12,12 @@ export interface InputRow {
   pin?: string;
 }
 
-export type RowStatus = 'created' | 'trustline_added' | 'unchanged' | 'failed';
+/**
+ * `uncertain`: the creation may have landed; the account id is known, the
+ * chain could not be read to confirm it, and the row is not written to the
+ * SDP file. The pending record stays for the next run.
+ */
+export type RowStatus = 'created' | 'trustline_added' | 'unchanged' | 'failed' | 'uncertain';
 export type PinStatus = 'set' | 'kept' | 'none' | 'refused';
 
 /** What happened to one row. Phone and account are masked for display. */
@@ -41,8 +46,8 @@ export interface SdpRow {
 
 export interface ProvisionReport {
   outcomes: RowOutcome[];
-  counts: { created: number; trustlineAdded: number; unchanged: number; failed: number; pinRefused: number };
-  /** Rows with an account, in input order: the SDP file content. */
+  counts: { created: number; trustlineAdded: number; unchanged: number; failed: number; uncertain: number; pinRefused: number };
+  /** Rows with a confirmed account, in input order: the SDP file content. Failed and uncertain rows are absent. */
   sdpRows: SdpRow[];
 }
 
