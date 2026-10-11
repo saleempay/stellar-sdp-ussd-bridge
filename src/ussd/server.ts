@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { FetchHorizon } from '../provision/horizon.js';
 import { InMemoryPendingStore, JsonFilePendingStore, type PendingCreationStore } from '../provision/pending.js';
 import { USDC_CODE } from '../sdp/facts.js';
-import { TESTNET_FACTS, assertNetwork, type NetworkFacts } from '../sdp/network.js';
+import { NETWORK_ENV, NetworkConfigError, TESTNET_FACTS, TESTNET_NETWORK_TYPE, assertNetwork, type NetworkFacts } from '../sdp/network.js';
 import { loadAccountView } from './accountView.js';
 import { closingLineFromEnv } from './closingLine.js';
 import { DEFAULT_CREATION_CAPS, createOnDial, type CreationCaps } from './createOnDial.js';
@@ -74,7 +74,13 @@ function positiveNumber(name: string, raw: string | undefined, fallback: number)
  * (NetworkConfigError when the network values are missing or mixed) and
  * validates the closing line (ClosingLineError); both are refusals the
  * process should report and exit on. Creation on dial fails closed: off
- * unless USSD_CREATE_ON_DIAL is exactly true, and capped (D5).
+ * unless USSD_CREATE_ON_DIAL is exactly true, and capped (D5); on any
+ * network other than testnet it is refused at boot (NetworkConfigError),
+ * because creation on dial is a demonstration posture: it creates an
+ * account for whoever dials, with the sponsor's reserves, and the
+ * reference signer keeps no key for it. Elsewhere recipients are
+ * provisioned by the operator (`npm run provision`) and an unknown number
+ * sees E3.
  */
 export function ussdConfigFromEnv(env: Record<string, string | undefined>): UssdServerConfig {
   // fail closed: creation on dial is off unless the environment says true
@@ -84,6 +90,11 @@ export function ussdConfigFromEnv(env: Record<string, string | undefined>): Ussd
     maxPerHour: positiveNumber('USSD_CREATE_MAX_PER_HOUR', env.USSD_CREATE_MAX_PER_HOUR, DEFAULT_CREATION_CAPS.maxPerHour),
   };
   const network = assertNetwork(env);
+  if (createOnDial && network.networkType !== TESTNET_NETWORK_TYPE) {
+    throw new NetworkConfigError([
+      `USSD_CREATE_ON_DIAL=true is refused for network type "${network.networkType}" (${NETWORK_ENV.networkType}): creation on dial is a testnet demonstration posture; on any other network recipients are provisioned by the operator, so leave USSD_CREATE_ON_DIAL unset or false`,
+    ]);
+  }
   const closingLine = closingLineFromEnv(env, maxClosingLineLength());
   return {
     callbackPath: env.USSD_CALLBACK_PATH ?? '',

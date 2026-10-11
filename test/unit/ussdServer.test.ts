@@ -37,6 +37,29 @@ describe('ussdConfigFromEnv: the boot assertion and the closing line', () => {
     expect(typeof server.listener).toBe('function');
   });
 
+  const othernet = {
+    NETWORK_TYPE: 'othernet',
+    NETWORK_PASSPHRASE: 'Other Network ; Example Only',
+    HORIZON_URL: 'https://horizon.example.test',
+    ASSET_ISSUER: 'G'.padEnd(56, 'A'),
+    EXPLORER_BASE_URL: 'https://explorer.example.test/other',
+    BRIDGE_ACKNOWLEDGE_REAL_FUNDS: 'yes',
+  };
+
+  it('on any network other than testnet, USSD_CREATE_ON_DIAL=true is refused at boot, naming the variable and the network', () => {
+    const env = { USSD_CALLBACK_PATH: '/ussd/test-only-path', ...othernet, USSD_CREATE_ON_DIAL: 'true', SPONSOR_SECRET_KEY: 'S'.padEnd(56, 'B') };
+    expect(() => ussdConfigFromEnv(env)).toThrow(NetworkConfigError);
+    expect(() => ussdConfigFromEnv(env)).toThrow(/USSD_CREATE_ON_DIAL=true is refused for network type "othernet"/);
+    // the refusal is the config step itself, before any store, signer or listener exists
+    expect(() => ussdConfigFromEnv({ ...env, USSD_CREATE_ON_DIAL: ' TRUE ' })).toThrow(NetworkConfigError);
+  });
+
+  it('on another network, creation on dial unset or false passes the boot check; on testnet true is still allowed', () => {
+    expect(ussdConfigFromEnv({ USSD_CALLBACK_PATH: '/ussd/test-only-path', ...othernet }).createOnDial).toBe(false);
+    expect(ussdConfigFromEnv({ USSD_CALLBACK_PATH: '/ussd/test-only-path', ...othernet, USSD_CREATE_ON_DIAL: 'false' }).createOnDial).toBe(false);
+    expect(ussdConfigFromEnv({ USSD_CALLBACK_PATH: '/ussd/test-only-path', USSD_CREATE_ON_DIAL: 'true' }).createOnDial).toBe(true);
+  });
+
   it('refuses a closing line that breaks the budget or is not printable ASCII', () => {
     expect(() => ussdConfigFromEnv({ ...minimal, USSD_CLOSING_LINE: 'x'.repeat(200) })).toThrow(ClosingLineError);
     expect(() => ussdConfigFromEnv({ ...minimal, USSD_CLOSING_LINE: 'Café' })).toThrow(ClosingLineError);

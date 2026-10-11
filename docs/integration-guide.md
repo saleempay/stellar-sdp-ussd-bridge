@@ -212,7 +212,12 @@ created on dial, paid by the sponsor in `.env`. `false` (the
 operator-provisioned posture): only numbers you provisioned are served; a
 number with no account sees "No account found for this number. Dial again
 to set up." (E3). Set `false` when recipients must have passed your
-identity and consent steps before they can hold funds.
+identity and consent steps before they can hold funds. `true` is accepted
+on testnet only: on any other network type the service refuses to start
+(exit code 2, naming the variable and the network), because creation on
+dial opens an account for whoever dials, with the sponsor's reserves, and
+the reference signer keeps no key for it; off testnet, recipients are
+provisioned by the operator with `npm run provision`.
 
 A creation whose submission gets no definitive answer (the 8 second dial
 deadline passes, Horizon answers a 5xx or no result codes) is not treated
