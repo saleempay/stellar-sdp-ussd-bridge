@@ -22,6 +22,9 @@ jobs:
         with:
           # the adapter is consumed as a git submodule at a pinned commit
           submodules: true
+          # full history so the secret scan can read the lines each commit
+          # of the pull request adds, not only the final tree
+          fetch-depth: 0
 
       # 22 is the minimum this package declares in engines. Testing the
       # floor rather than the newest release is deliberate.
@@ -40,4 +43,6 @@ jobs:
       - run: npm test
 
       - name: secret scan
+        # GITHUB_BASE_REF names the pull request base; the script scans the
+        # lines added by origin/<base>..HEAD as well as the tree
         run: sh scripts/secret-scan.sh
