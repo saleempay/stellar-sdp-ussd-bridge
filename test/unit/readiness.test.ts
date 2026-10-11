@@ -5,7 +5,7 @@ import { TESTNET_USDC_ISSUER } from '../../src/sdp/facts.js';
 import { fakeFetch, type Recorded } from './helpers.js';
 
 /** An in-memory SDP: enough state to exercise every readiness step. */
-function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; tenantStatus?: string; noDistributionAccount?: boolean; isDefault?: boolean; invitationsOff?: boolean; walletEnabled?: boolean; usdcIssuer?: string; noUserManaged?: boolean } = {}) {
+function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; tenantStatus?: string; noDistributionAccount?: boolean; isDefault?: boolean; invitationsOff?: boolean; walletEnabled?: boolean; usdcIssuer?: string; noUserManaged?: boolean; otherUserManagedName?: string } = {}) {
   const state = {
     apiHealthCallsLeft: opts.apiDown ?? 0,
     tenant: opts.tenantExists
@@ -35,7 +35,7 @@ function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; tenantStatus?
     if (p === '/reset-password') { const b = JSON.parse(r.body!); const email = [...state.resetTokens.entries()].find(([, t]) => t === b.reset_token)?.[0]; if (!email) return { status: 400, body: { error: 'Invalid reset password token.' } }; state.passwords.set(email, b.password); state.resetTokens.delete(email); return { status: 200 }; }
     if (p === '/organization' && r.method === 'GET') return { status: 200, body: { name: 'Org', receiver_invitations_disabled: state.invitationsOff } };
     if (p === '/organization' && r.method === 'PATCH') { state.invitationsOff = JSON.parse(r.form!.data!.value).receiver_invitations_disabled === true; return { status: 200, body: { message: 'ok' } }; }
-    if (p === '/wallets' && r.method === 'GET') return { status: 200, body: opts.noUserManaged ? [] : [{ id: 'w-um', name: 'User Managed Wallet', enabled: state.walletEnabled, user_managed: true }] };
+    if (p === '/wallets' && r.method === 'GET') return { status: 200, body: opts.noUserManaged ? [] : [{ id: 'w-um', name: opts.otherUserManagedName ?? 'User Managed Wallet', enabled: state.walletEnabled, user_managed: true }] };
     if (p === '/wallets/w-um' && r.method === 'PATCH') { state.walletEnabled = JSON.parse(r.body!).enabled; return { status: 200, body: { id: 'w-um', name: 'User Managed Wallet', enabled: state.walletEnabled } }; }
     if (p === '/assets') return { status: 200, body: [{ id: 'a-xlm', code: 'XLM', issuer: '' }, { id: 'a-usdc', code: 'USDC', issuer: state.usdcIssuer }] };
     return undefined;
@@ -123,6 +123,15 @@ describe('provisionTenant', () => {
     const { deps } = fakeSdp({ noUserManaged: true });
     const err = (await provisionTenant(cfg, deps).catch((e: unknown) => e)) as ReadinessError;
     expect(err.step).toBe('user managed wallet');
+  });
+
+  it('fails when the named wallet is absent instead of enabling whichever user managed wallet comes first', async () => {
+    const { deps, calls } = fakeSdp({ otherUserManagedName: 'Some Other Wallet' });
+    const err = (await provisionTenant(cfg, deps).catch((e: unknown) => e)) as ReadinessError;
+    expect(err.step).toBe('user managed wallet');
+    expect(err.message).toContain('"User Managed Wallet"');
+    expect(err.message).toContain('"Some Other Wallet"');
+    expect(calls.some((c) => c.method === 'PATCH' && c.url.includes('/wallets/'))).toBe(false);
   });
 
   it('never carries the login password into results or errors', async () => {

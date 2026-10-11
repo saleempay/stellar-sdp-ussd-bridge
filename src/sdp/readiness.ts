@@ -219,11 +219,18 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   });
 
   // 7: the user managed wallet (the record wallet-address disbursements
-  // reference) exists and is enabled.
+  // reference) exists and is enabled. The SDP routes a wallet-address
+  // disbursement through the first enabled user managed wallet it finds
+  // (disbursement_handler.go:146-158), so the bridge enables the one seeded
+  // under the testnet name and fails when it is absent rather than
+  // enabling whichever wallet comes first.
   await run('user managed wallet', async () => {
     const wallets = await client.listWallets({ user_managed: true });
-    const wallet = wallets.find((w) => w.name === USER_MANAGED_WALLET_NAME) ?? wallets[0];
-    if (!wallet) throw new Error('no user managed wallet is seeded for this tenant');
+    const wallet = wallets.find((w) => w.name === USER_MANAGED_WALLET_NAME);
+    if (!wallet) {
+      const seen = wallets.map((w) => `"${w.name}"`).join(', ') || '(none)';
+      throw new Error(`no user managed wallet named "${USER_MANAGED_WALLET_NAME}" is seeded for this tenant; user managed wallets present: ${seen}`);
+    }
     if (wallet.enabled) {
       results.push({ step: 'user managed wallet', outcome: 'already', detail: `"${wallet.name}" id ${wallet.id} is enabled` });
       return;
