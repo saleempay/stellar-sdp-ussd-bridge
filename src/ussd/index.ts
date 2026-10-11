@@ -5,3 +5,5 @@ export * from './accountView.js';
 export * from './machine.js';
 export * from './capture.js';
 export * from './server.js';
+export * from './tunnel.js';
+export * from './dialReadiness.js';

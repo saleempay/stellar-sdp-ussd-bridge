@@ -72,15 +72,69 @@ The menu is `docs/ussd-menu-walkthrough-v1.md` with the additions in
 answers the gateway's callbacks; the reference gateway is Africa's Talking.
 
 ```bash
-# .env: USSD_CALLBACK_PATH (long random segment), USSD_PORT, DATA_DIR
-npm run ussd:capture -- --tunnel-url https://<your tunnel host>
+# .env: USSD_CALLBACK_PATH (long random segment), USSD_PORT, DATA_DIR,
+#       USSD_TUNNEL_MODE (quick, named or external)
+npm run ussd:capture -- --wait-minutes 240 --clipboard
 ```
 
-Expose the port through a tunnel of your own (the script starts none),
-set the gateway callback to the tunnel base URL followed by
-`USSD_CALLBACK_PATH`, and dial the service code from the gateway's
-simulator. The banner shows the path masked; never paste the full value
-anywhere.
+The script starts the service, puts a public tunnel in front of it, and
+records every request. It prints the tunnel hostname in full on every
+start (and again, with a warning, if the tunnel process ever restarts),
+writes every tunnel start to the capture record, and prints `READY TO
+DIAL` only when the hostname resolves on two public resolvers (1.1.1.1 and
+8.8.8.8) and a well-formed gateway POST through the public URL returns
+screen 1. Set the gateway callback to `https://<hostname>` followed by
+`USSD_CALLBACK_PATH`, no trailing slash; `--clipboard` copies that full
+URL to the clipboard so the path is never typed or shown. After saving,
+reopen the channel and confirm the saved host matches the printed
+hostname, then dial the service code from the gateway's simulator. The
+banner shows the path masked; never paste the full value anywhere.
+
+### Tunnel modes and a fixed hostname
+
+| `USSD_TUNNEL_MODE` | What runs | Hostname |
+|---|---|---|
+| `quick` (default) | `cloudflared tunnel --url http://localhost:<port>`; no Cloudflare account needed | changes on every start ("The hostname changes each time you create a Quick Tunnel", Cloudflare TryCloudflare page, read 11 October 2026); no uptime guarantee |
+| `named` | `cloudflared tunnel run --token <USSD_TUNNEL_TOKEN>`, or `cloudflared tunnel run --url http://localhost:<port> <USSD_TUNNEL_NAME>` | fixed: `USSD_TUNNEL_HOSTNAME` |
+| `external` | nothing; pass `--tunnel-url https://<host>` for a tunnel you run yourself | whatever that tunnel gives you |
+
+A quick tunnel is enough for a sandbox session, with one rule: the
+callback saved in the gateway dashboard must carry the hostname of the
+tunnel that is running now. On 7 and 10 October 2026 every failed dial was
+the dashboard holding the hostname of an earlier start (see `EVIDENCE.md`,
+11 October correction). To stop the hostname changing, use one of these:
+
+**Option A: Cloudflare named tunnel (needs a domain whose DNS is on
+Cloudflare).** Steps from the Cloudflare guide "Create a locally-managed
+tunnel" (developers.cloudflare.com, read 11 October 2026):
+
+```bash
+cloudflared tunnel login                       # browser sign-in, writes cert.pem
+cloudflared tunnel create saleem-ussd-sandbox  # writes <UUID>.json credentials
+cloudflared tunnel route dns saleem-ussd-sandbox ussd-sandbox.<your domain>
+```
+
+Then in `.env`: `USSD_TUNNEL_MODE=named`,
+`USSD_TUNNEL_HOSTNAME=ussd-sandbox.<your domain>`,
+`USSD_TUNNEL_NAME=saleem-ussd-sandbox`. The script runs
+`cloudflared tunnel run --url http://localhost:<port> saleem-ussd-sandbox`
+(`--url` on `run` verified with `cloudflared tunnel run --help`, version
+2026.8.2). Alternatively create the tunnel in the Zero Trust dashboard,
+add a public hostname routed to `http://localhost:<port>`, and put its
+token in `USSD_TUNNEL_TOKEN` instead of the name. The callback URL is then
+saved in the gateway dashboard once.
+
+**Option B: another provider with a stable hostname, in external mode.**
+For example ngrok: `ngrok config add-authtoken $YOUR_TOKEN`, then
+`ngrok http <port>`. Per the ngrok quickstart (read 11 October 2026),
+"All accounts come with a free dev domain that is automatically chosen
+when you start an endpoint", and a chosen name needs a paid plan
+(`--url`). Start it yourself and run
+`npm run ussd:capture -- --tunnel-url https://<that hostname>`. The
+readiness check and the record behave the same.
+
+Whichever option, the path stays a secret and is rotated per session;
+only the hostname becomes fixed.
 
 ### The three states a number can be in
 
