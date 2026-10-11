@@ -45,6 +45,7 @@ import {
   type UssdSession,
 } from 'stellar-ussd-sep10-adapter';
 import { AccountNotOnChainError, CreationCappedError, CreationPendingError, NoUsdcTrustlineError } from './errors.js';
+import { AccountReadError, describeReadFailure, formatReadFailure } from './accountView.js';
 import { SCREENS, type AccountView } from './screens.js';
 
 export interface BridgeMachineDeps {
@@ -254,7 +255,9 @@ async function renderAccount(
       log(`session=${session.sessionId} event=noTrustline`);
       return SCREENS.endNoTrustline();
     }
-    log(`session=${session.sessionId} event=viewFailed code=${(err as { code?: string })?.code ?? (err as Error)?.name ?? 'unknown'}`);
+    // the underlying code (and status, and the cause's code) of the last attempt, never user data
+    const attempts = err instanceof AccountReadError ? err.attempts : 1;
+    log(`session=${session.sessionId} event=viewFailed attempts=${attempts} ${formatReadFailure(describeReadFailure(err instanceof AccountReadError ? err.cause : err))}`);
     return SCREENS.endServiceDown();
   }
 }

@@ -250,8 +250,22 @@ creation and outgoing payments are skipped). No match shows "No payments
 received yet". An account whose last 200 operations hold no incoming USDC
 payment also shows that line; raise the scan depth in `accountView.ts` if
 your accounts are busier than that. Amounts are cut to two decimals, never
-rounded up; the date is the UTC date of the payment. Any Horizon failure
-within the budget shows "Service unavailable. Please try again later."
+rounded up; the date is the UTC date of the payment. A read that fails
+with a transport error (the runtime's fetch error, a socket or DNS error,
+the 2.5 second deadline) or a 5xx answer is tried once more after a 1
+second pause, if a full second attempt still fits the 7 second budget of
+the read; a 4xx answer is never retried (a 404 is "No account found", any
+other 4xx is a refusal Horizon has understood). The budget sits under the
+listener's 8.5 second busy screen and the gateway's 10 second limit, with
+the PIN verification and the response path in the same callback. Two
+failures, or any failure that cannot be retried, show "Service
+unavailable. Please try again later."; the service log line
+`event=viewFailed` then carries the attempt count, the error code, the
+HTTP status when there is one and the cause's code (for example
+`code=TypeError cause=ECONNRESET`), never any user data. Reason: on 11
+October 2026 one account read failed with a transport error and the same
+read succeeded 14 seconds later, so the caller saw E4 for a fault that was
+over by the next dial (`EVIDENCE.md`, "Finding while running").
 
 ### The closing line (`USSD_CLOSING_LINE`)
 
@@ -281,7 +295,9 @@ listener answers a busy screen at 8.5 seconds if work is still in flight,
 and the real answer is served from its cache to the gateway's retry. The
 sandbox ends a session after roughly 30 to 60 seconds without input
 (measured in the adapter's evidence, not quoted from documentation). PIN
-screens are local; the account screen is two reads under 2.5 seconds;
+screens are local; the account screen is two reads under 2.5 seconds,
+tried once more after a 1 second pause on a transport failure or a 5xx
+answer (worst case 6 seconds, budget 7 seconds);
 creation on dial is one Horizon submission (about 5 seconds measured),
 preceded by one read of the sponsor's balance for the cap.
 

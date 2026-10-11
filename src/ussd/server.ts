@@ -105,7 +105,8 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
   const network = cfg.network ?? TESTNET_FACTS;
   const asset = { code: cfg.assetCode ?? USDC_CODE, issuer: network.assetIssuer };
   const networkPassphrase = network.networkPassphrase;
-  const horizon = new FetchHorizon(network.horizonUrl, { timeoutMs: cfg.legTimeoutMs ?? SESSION_LEG_TIMEOUT_MS });
+  const legTimeoutMs = cfg.legTimeoutMs ?? SESSION_LEG_TIMEOUT_MS;
+  const horizon = new FetchHorizon(network.horizonUrl, { timeoutMs: legTimeoutMs });
   const sessions = cfg.sessionTtlMs ? new InMemorySessionStore(cfg.sessionTtlMs) : new InMemorySessionStore();
   const pins: PinStore = cfg.dataDir ? new JsonFilePinStore(join(cfg.dataDir, 'pins.json')) : new InMemoryPinStore();
   const accounts: AccountStore = cfg.dataDir ? new JsonFileAccountStore(join(cfg.dataDir, 'accounts.json')) : new (class implements AccountStore {
@@ -135,7 +136,8 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
     sessions,
     pins,
     accounts,
-    loadView: (accountId) => loadAccountView({ horizon, asset }, accountId),
+    // one retry of a transport failure or a 5xx inside the 7 s budget (accountView.ts)
+    loadView: (accountId) => loadAccountView({ horizon, asset, legTimeoutMs, log }, accountId),
     msisdn: { defaultCountryCode: cfg.defaultCountryCode },
     log,
   };
