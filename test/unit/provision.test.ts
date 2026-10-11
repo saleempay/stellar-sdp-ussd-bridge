@@ -88,6 +88,18 @@ describe('provisionRecipients', () => {
     expect(report.counts).toEqual({ created: 2, trustlineAdded: 0, unchanged: 0, failed: 2, uncertain: 0, pinRefused: 0 });
   });
 
+  it('classifies a creation rejection by change_trust result code, wherever the operation sits', async () => {
+    const { horizon, deps } = setup();
+    horizon.nextErrors = [
+      rejection('tx_failed', ['op_success', 'op_success', 'op_no_issuer', 'op_success']),
+      rejection('tx_failed', ['op_success', 'op_invalid_limit']),
+      rejection('tx_failed', ['op_success', 'op_success', 'op_success', 'op_bad_auth']),
+    ];
+    const many: InputRow[] = [rows[0]!, rows[1]!, { rowIndex: 3, phone: '+254700000003', id: 'r3', amount: '1' }];
+    const report = await provisionRecipients(many, deps);
+    expect(report.outcomes.map((o) => o.errorCode)).toEqual(['trustline_failure', 'trustline_failure', 'resolver_failure']);
+  });
+
   it('refuses the whole run before any transaction when the sponsor cannot pay for it', async () => {
     const { horizon, deps } = setup({ sponsorXlm: '2.0000000' });
     const err = await provisionRecipients(rows, deps).catch((e: unknown) => e);

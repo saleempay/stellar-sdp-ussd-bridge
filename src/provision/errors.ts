@@ -117,6 +117,27 @@ export class PinInputError extends BridgeError {
   }
 }
 
+/**
+ * Operation result codes that only a change_trust operation produces.
+ * Source: ChangeTrustResultCode in stellar/stellar-xdr Stellar-transaction.x
+ * (lines 1431-1446 on 11 October 2026): NO_ISSUER, INVALID_LIMIT,
+ * SELF_NOT_ALLOWED, TRUST_LINE_MISSING, CANNOT_DELETE and
+ * NOT_AUTH_MAINTAIN_LIABILITIES are specific to change_trust; Horizon
+ * renders them as op_<name> in lower case. MALFORMED and LOW_RESERVE are
+ * shared with other operations and are left out: op_low_reserve is read
+ * as the sponsor underfunded (above) whichever operation reports it.
+ * Searching the codes for these names classifies a trustline failure
+ * without assuming the position of change_trust in the transaction.
+ */
+export const CHANGE_TRUST_RESULT_CODES = new Set([
+  'op_no_issuer',
+  'op_invalid_limit',
+  'op_self_not_allowed',
+  'op_trust_line_missing',
+  'op_cannot_delete',
+  'op_not_auth_maintain_liabilities',
+]);
+
 /** Result codes that mean the sponsor, not the recipient, lacked funds or reserve. */
 export const UNDERFUNDED_RESULT_CODES = new Set([
   'tx_insufficient_balance',

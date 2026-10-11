@@ -44,6 +44,7 @@ import {
 } from 'stellar-ussd-sep10-adapter';
 import {
   BridgeError,
+  CHANGE_TRUST_RESULT_CODES,
   CreationUncertainError,
   HorizonTimeoutError,
   InvalidPhoneNumberError,
@@ -118,6 +119,16 @@ function resultCodes(err: unknown): string[] {
 
 function underfunded(err: unknown): boolean {
   return resultCodes(err).some((c) => UNDERFUNDED_RESULT_CODES.has(c));
+}
+
+/**
+ * The network rejected the change_trust operation: a code only that
+ * operation produces is present, wherever the adapter placed the operation.
+ * (op_no_trust is the adapter's TrustlineMissingError and is handled by
+ * type.)
+ */
+function changeTrustRejected(err: unknown): boolean {
+  return resultCodes(err).some((c) => CHANGE_TRUST_RESULT_CODES.has(c));
 }
 
 /**
@@ -321,7 +332,7 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
           if (t) return fail(base, new HorizonTimeoutError(t.operation, t.timeoutMs, row.rowIndex));
           if (err instanceof AccountNotFoundError) return fail(base, new SponsorUnderfundedError(`sponsor ${maskAccount(deps.sponsorPublicKey)} does not exist on this network`, undefined, undefined, row.rowIndex));
           if (underfunded(err)) return fail(base, new SponsorUnderfundedError(`network rejected the creation: ${resultCodes(err).join(', ')}`, undefined, undefined, row.rowIndex));
-          if (err instanceof TrustlineMissingError || (err instanceof TransactionFailedError && (err.operationResultCodes ?? [])[2] !== undefined && (err.operationResultCodes ?? [])[2] !== 'op_success')) {
+          if (err instanceof TrustlineMissingError || changeTrustRejected(err)) {
             return fail(base, trustlineError(row.rowIndex, err));
           }
           return fail(base, new ResolverFailureError(row.rowIndex, `account creation failed: ${(err as Error).message}`, undefined, { cause: err }));
