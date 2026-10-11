@@ -114,6 +114,26 @@ describe('entry state: account, no PIN (a Deliverable 2 recipient)', () => {
     expect((await f.pins.get(MSISDN))!.hash).toBe(before);
   });
 
+  it('two sessions in setup for one number: the first stored PIN is kept and the second session is asked to enter it', async () => {
+    const f = setup({ account: ACCOUNT, view: { balance: '0.0000000' } });
+    const a = f.dial('a');
+    const b = f.dial('b');
+    await a(); await a('1'); await a(PIN);
+    await b(); await b('1'); await b(OTHER_PIN);
+    expect((await a(PIN)).kind).toBe('end');
+    const stored = (await f.pins.get(MSISDN))!.hash;
+    expect(await verifyPin(PIN, stored)).toBe(true);
+    // B confirms its own PIN after A stored one: no replacement, enter-PIN screen instead
+    const bConfirm = await b(OTHER_PIN);
+    expect(bConfirm.text).toBe('Enter your PIN');
+    expect(bConfirm.kind).toBe('con');
+    expect((await f.pins.get(MSISDN))!.hash).toBe(stored);
+    expect(f.logs.some((l) => l.includes('session=b event=pinSetupRaced'))).toBe(true);
+    expect((await b(OTHER_PIN)).text).toBe('Wrong PIN. 2 attempts left\nEnter your PIN');
+    expect((await b(PIN)).kind).toBe('end');
+    expect((await f.pins.get(MSISDN))!.hash).toBe(stored);
+  });
+
   it('mismatch (A-5), bad format (A-3) and weak (A-4) re-prompt without storing anything', async () => {
     const f = setup({ account: ACCOUNT });
     const s = f.dial();

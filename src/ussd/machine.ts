@@ -18,7 +18,10 @@
  *
  * PIN wording (adapter issue #9): "PIN saved" is rendered only by the
  * callback that stored the hash; "PIN accepted" only after verifyPinAttempt
- * succeeded. Setup is reached only when no record exists, so a stored PIN
+ * succeeded. Setup is entered only when no record exists, and the record
+ * is checked again at the moment of storing (pinSetup2): two sessions from
+ * one number that both entered setup end with the first stored PIN kept
+ * and the second session answered the enter-PIN screen, so a stored PIN
  * is never replaced. Nothing in this flow signs anything, so there is no
  * signing claim; a replayed final callback is answered from the listener's
  * cache.
@@ -154,6 +157,15 @@ async function transition(
       if (first === undefined || input !== first || !isWellFormedPin(input)) {
         session.state = 'pinSetup1';
         return SCREENS.pinSetupMismatch();
+      }
+      // establishPin is an unconditional put in the adapter, so the record
+      // is checked again here: a PIN stored by another session of this
+      // number since the welcome step is kept, and this session is asked
+      // to enter it.
+      if (await hasPin({ store: deps.pins }, session.msisdn)) {
+        log(`session=${session.sessionId} event=pinSetupRaced`);
+        session.state = 'pinEnter';
+        return SCREENS.pinEnter();
       }
       await establishPin({ store: deps.pins, now: () => now }, session.msisdn, input);
       log(`session=${session.sessionId} event=pinSaved`);
