@@ -57,6 +57,18 @@ export const USER_MANAGED_WALLET_NAME = 'User Managed Wallet';
 export const TESTNET_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 export const TESTNET_HORIZON_URL = 'https://horizon-testnet.stellar.org';
 
+/**
+ * Tenant statuses at 7.0.0, pkg/schema/tenant.go:26-31: TENANT_CREATED,
+ * TENANT_PROVISIONED, TENANT_ACTIVATED, TENANT_DEACTIVATED. The bridge
+ * accepts an existing tenant only in the two states in which provisioning
+ * has completed and the tenant is not switched off; TENANT_CREATED is the
+ * row before provisioning finishes and TENANT_DEACTIVATED is refused on
+ * every tenant route (stellar-multitenant/internal/services/
+ * status_change_validator.go, middleware). A tenant is also required to
+ * carry a distribution account address, or nothing can be paid.
+ */
+export const TENANT_STATUSES_USABLE = ['TENANT_PROVISIONED', 'TENANT_ACTIVATED'] as const;
+
 /** Tenant distribution account types. Source: pkg/schema/account_type.go. */
 export const DISTRIBUTION_ACCOUNT_DB_VAULT = 'DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT';
 export const DISTRIBUTION_ACCOUNT_ENV = 'DISTRIBUTION_ACCOUNT.STELLAR.ENV';
