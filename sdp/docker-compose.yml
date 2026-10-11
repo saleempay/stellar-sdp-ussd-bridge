@@ -132,7 +132,8 @@ services:
     image: stellar/stellar-disbursement-platform-frontend:7.0.0@sha256:edec92a3c3169a041364ea218ec55c905b7e869af8ecb936f0a87ca5f45ea2b7
     platform: linux/amd64
     depends_on:
-      - sdp-api
+      sdp-api:
+        condition: service_healthy
     ports:
       - "127.0.0.1:3000:80"
     volumes:
