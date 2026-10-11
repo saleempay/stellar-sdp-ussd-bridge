@@ -77,8 +77,8 @@ writes the SDP file with the columns
 idempotent: run it again and it creates nothing, sends nothing and writes
 the same bytes (it prints the file's SHA-256). Rows that fail are reported
 one by one with a code (`invalid_phone`, `resolver_failure`,
-`sponsor_underfunded`, `trustline_failure`, `horizon_timeout`,
-`pin_input`); the other rows still succeed. The sponsor is a throwaway
+`sponsor_underfunded`, `trustline_failure`, `signer_unavailable`,
+`horizon_timeout`, `pin_input`); the other rows still succeed. The sponsor is a throwaway
 testnet account in `.env`; the run is refused up front when it cannot pay
 for every row.
 
@@ -98,6 +98,16 @@ the command refuses it unless you pass `--allow-pin-column`, and a file
 with PINs must never be used outside testnet. See
 `docs/identity-binding.md` for what the bridge binds and what you must add
 (identity, consent, a real signer, protected stores).
+
+**Receive-only.** With the reference signer, the accounts this command
+creates are receive-only: their keys are forgotten when the command
+exits, so no later process in this repository can sign for them. They
+receive the SDP's payments and show them over USSD (sections 3 and 4).
+A mapped account that lacks a trustline is reported as
+`signer_unavailable` rather than repaired, and the sponsor's reserve in
+each account (about 1.5 XLM) cannot be reclaimed. SEP-10 and any outbound
+payment need a `Signer` you supply (`docs/identity-binding.md`,
+"Receive-only with the reference signer").
 
 ## 3. Run the USSD service
 
@@ -221,7 +231,9 @@ The PIN policy is the adapter's: four digits, a weak list at setup, three
 attempts then a 15 minute lockout, scrypt hashes in `data/pins.json`, the
 PIN never stored, logged or shown. "PIN saved" is shown only by the step
 that stored the hash; "PIN accepted" only after a verification. A stored
-PIN is never replaced by the service.
+PIN is never replaced by the service. The PIN gates the account screen;
+the service signs nothing, and with the reference signer nothing can be
+signed for a provisioned account (section 2, "Receive-only").
 
 ### Timing
 
@@ -264,5 +276,7 @@ next dial. The run is recorded under `test-output/d4-batch/`.
 
 ## What is out of scope
 
-Mainnet; production signing or custody; cash-out; SIM Toolkit; assets
-other than USDC; SDP registration over USSD; changes to the SDP.
+Mainnet; production signing or custody; a persistent signer (the
+reference signer makes provisioned accounts receive-only); cash-out; SIM
+Toolkit; assets other than USDC; SDP registration over USSD; changes to
+the SDP.

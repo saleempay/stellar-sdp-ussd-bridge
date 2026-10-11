@@ -49,6 +49,7 @@ import {
   InvalidPhoneNumberError,
   PinInputError,
   ResolverFailureError,
+  SignerUnavailableForAccountError,
   SponsorUnderfundedError,
   TrustlineFailureError,
   UNDERFUNDED_RESULT_CODES,
@@ -241,6 +242,13 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
     if (accountHasTrustline(account, deps.asset)) {
       base.status = 'unchanged';
     } else {
+      // The trustline needs the account's own signature. The reference
+      // signer forgets keys when the process ends, so for an account
+      // provisioned in an earlier run this path is unavailable and says so;
+      // it is not a network failure.
+      if (!(await deps.signer.canSignFor(accountId))) {
+        return fail(base, new SignerUnavailableForAccountError(row.rowIndex, accountId, `the mapped account ${maskAccount(accountId)} has no ${deps.asset.code} trustline and the configured signer cannot sign for it; with the reference signer, accounts provisioned by this bridge are receive-only and their keys are not kept between runs, so a trustline cannot be added later; supply a Signer that holds the key`));
+      }
       try {
         const result = await addSponsoredTrustline({
           horizon: deps.horizon,

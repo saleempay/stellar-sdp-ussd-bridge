@@ -40,7 +40,7 @@ row 2.2 was recomputed the same day and matches.
 | 2.2 | The SDP disbursement file produced by the bridge | open `docs/evidence/d2-disbursement.csv` | header `phone,walletAddress,walletAddressMemo,id,amount,paymentID`, five rows; its SHA-256 is `b4d8c873d47644ff5a45b2ab3b025be2a1834ac8446f917cdef0e73345e6a88f` (`shasum -a 256 docs/evidence/d2-disbursement.csv`) |
 | 2.3 | A second run creates nothing | read `EVIDENCE.md`, "Second run: nothing changes" | five `unchanged`, sponsor transaction count unchanged, identical file |
 | 2.4 | The file is accepted by the SDP | read `EVIDENCE.md`, "Upload to the SDP tenant" | disbursement `fa63ed05...` READY, five receiver wallets REGISTERED, no invitation |
-| 2.5 | What the binding is and is not | open `docs/identity-binding.md` | states that no PIN is set by provisioning and what an adopter must add |
+| 2.5 | What the binding is and is not | open `docs/identity-binding.md` | states that no PIN is set by provisioning, that accounts are receive-only with the reference signer (keys are not kept, so no later signing, no trustline repair, sponsor reserves not reclaimable), and what an adopter must add |
 
 ## Deliverable 3: USSD receive and balance view
 

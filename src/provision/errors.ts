@@ -53,6 +53,23 @@ export class SponsorUnderfundedError extends BridgeError {
   }
 }
 
+/**
+ * The mapped account needs a trustline and the configured signer cannot
+ * sign for it. With the reference signer this is the normal state of every
+ * account provisioned in an earlier run: keys are not kept between runs,
+ * so such accounts are receive-only and nothing can be added to them from
+ * the command line. Reported as its own code, never as trustline_failure.
+ */
+export class SignerUnavailableForAccountError extends BridgeError {
+  constructor(
+    rowIndex: number,
+    readonly accountId: string,
+    detail: string,
+  ) {
+    super('signer_unavailable', detail, rowIndex);
+  }
+}
+
 /** The trustline operation was rejected by the network. */
 export class TrustlineFailureError extends BridgeError {
   constructor(

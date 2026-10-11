@@ -46,7 +46,7 @@ describe('provisionRecipients', () => {
     expect(second.sdpRows).toEqual(first.sdpRows);
   });
 
-  it('adds only the trustline when the mapped account exists without one', async () => {
+  it('adds only the trustline when the mapped account exists without one and the signer holds its key', async () => {
     const { horizon, deps, accountStore } = setup();
     await accountStore.put('+254700000001', EXISTING);
     horizon.addAccount(EXISTING, { xlm: '0', sponsored: 2 });
@@ -54,6 +54,18 @@ describe('provisionRecipients', () => {
     const report = await provisionRecipients([rows[0]!], deps);
     expect(report.outcomes[0]?.status).toBe('trustline_added');
     expect(horizon.submissions).toHaveLength(1);
+  });
+
+  it('with the reference signer (no key for the mapped account) the trustline path reports signer_unavailable, not trustline_failure, and submits nothing', async () => {
+    const { horizon, deps, accountStore } = setup();
+    await accountStore.put('+254700000001', EXISTING);
+    horizon.addAccount(EXISTING, { xlm: '0', sponsored: 2 });
+    const report = await provisionRecipients([rows[0]!], deps);
+    expect(report.outcomes[0]?.status).toBe('failed');
+    expect(report.outcomes[0]?.errorCode).toBe('signer_unavailable');
+    expect(report.outcomes[0]?.message).toContain('receive-only');
+    expect(horizon.submissions).toHaveLength(0);
+    expect(await accountStore.get('+254700000001')).toBe(EXISTING);
   });
 
   it('a failing row never stops the others and each failure carries its typed code', async () => {
