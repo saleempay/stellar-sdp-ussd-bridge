@@ -1,0 +1,1302 @@
+{
+  "started": "2026-10-11T07-10-17-151Z",
+  "tunnelMode": "quick",
+  "tunnels": [
+    {
+      "at": "2026-10-11T07:10:22.693Z",
+      "hostname": "sas-truly-relates-gather.trycloudflare.com",
+      "mode": "quick",
+      "restart": false
+    }
+  ],
+  "readiness": [
+    {
+      "at": "2026-10-11T07:10:22.912Z",
+      "hostname": "sas-truly-relates-gather.trycloudflare.com",
+      "dns": [
+        {
+          "server": "1.1.1.1",
+          "addresses": [],
+          "error": "ENOTFOUND"
+        },
+        {
+          "server": "8.8.8.8",
+          "addresses": [],
+          "error": "ENOTFOUND"
+        }
+      ],
+      "probe": {
+        "status": null,
+        "bodyPrefix": "",
+        "error": "skipped: hostname did not resolve",
+        "ok": false
+      },
+      "ready": false,
+      "reasons": [
+        "hostname does not resolve on 1.1.1.1: ENOTFOUND",
+        "hostname does not resolve on 8.8.8.8: ENOTFOUND"
+      ]
+    },
+    {
+      "at": "2026-10-11T07:10:28.487Z",
+      "hostname": "sas-truly-relates-gather.trycloudflare.com",
+      "dns": [
+        {
+          "server": "1.1.1.1",
+          "addresses": [
+            "104.16.230.132",
+            "104.16.231.132"
+          ]
+        },
+        {
+          "server": "8.8.8.8",
+          "addresses": [
+            "104.16.230.132",
+            "104.16.231.132"
+          ]
+        }
+      ],
+      "probe": {
+        "status": 200,
+        "bodyPrefix": "CON Saleem\n1. My account\n2. About",
+        "ok": true
+      },
+      "ready": true,
+      "reasons": []
+    }
+  ],
+  "exchanges": [
+    {
+      "at": "2026-10-11T07:10:28.458Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 111,
+        "bodyBytes": 111,
+        "userAgent": "stellar-sdp-ussd-bridge readiness probe",
+        "forwardedFor": "<operator address>",
+        "connectingIp": "<operator address>",
+        "forwardedProto": "https",
+        "country": "AE",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "sessionId": "readiness-1791702628024",
+        "phoneNumber": "+2547***0000",
+        "networkCode": "99999",
+        "serviceCode": "*384*45210#",
+        "text": ""
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 5
+    },
+    {
+      "at": "2026-10-11T07:21:24.857Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 85,
+        "bodyBytes": 85,
+        "userAgent": "diag-after-dial",
+        "forwardedFor": "<operator address>",
+        "connectingIp": "<operator address>",
+        "forwardedProto": "https",
+        "country": "AE",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "sessionId": "diag-after-dial",
+        "phoneNumber": "+2547***0000",
+        "serviceCode": "*384*45210#",
+        "text": ""
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 10
+    },
+    {
+      "at": "2026-10-11T07:28:52.098Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_b6b6117ac5026727a3d7ea190f140367",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 16
+    },
+    {
+      "at": "2026-10-11T07:32:58.726Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_cb2fa9feafd846805f1f4c47e9018678",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 16
+    },
+    {
+      "at": "2026-10-11T07:36:02.519Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_5e05c1355b36b0a114d1524ed1dbcf30",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 4
+    },
+    {
+      "at": "2026-10-11T07:36:07.516Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_5e05c1355b36b0a114d1524ed1dbcf30",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 8
+    },
+    {
+      "at": "2026-10-11T07:36:11.813Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 138,
+        "bodyBytes": 138,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_5e05c1355b36b0a114d1524ed1dbcf30",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Wrong PIN. 2 attempts left\nEnter your PIN",
+      "serverMs": 110
+    },
+    {
+      "at": "2026-10-11T07:36:50.043Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 145,
+        "bodyBytes": 145,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_5e05c1355b36b0a114d1524ed1dbcf30",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GDMN..QUUU\nBalance 1.50 USDC\nLast received 1.50 USDC, 7 Oct\nTest only, no funds move",
+      "serverMs": 968
+    },
+    {
+      "at": "2026-10-11T07:37:59.764Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_7df30a39f18e6495ece8bded5df6a3e7",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 3
+    },
+    {
+      "at": "2026-10-11T07:38:06.356Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_7df30a39f18e6495ece8bded5df6a3e7",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 3
+    },
+    {
+      "at": "2026-10-11T07:38:17.561Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 138,
+        "bodyBytes": 138,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_7df30a39f18e6495ece8bded5df6a3e7",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Wrong PIN. 2 attempts left\nEnter your PIN",
+      "serverMs": 99
+    },
+    {
+      "at": "2026-10-11T07:38:30.324Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 145,
+        "bodyBytes": 145,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5311",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_7df30a39f18e6495ece8bded5df6a3e7",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GDMN..QUUU\nBalance 1.50 USDC\nLast received 1.50 USDC, 7 Oct\nTest only, no funds move",
+      "serverMs": 924
+    },
+    {
+      "at": "2026-10-11T07:42:14.964Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5322",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_bcdd83f95f0d00cd8198253d0a077ad9",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 1
+    },
+    {
+      "at": "2026-10-11T07:42:19.056Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5322",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_bcdd83f95f0d00cd8198253d0a077ad9",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 4
+    },
+    {
+      "at": "2026-10-11T07:42:25.800Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 138,
+        "bodyBytes": 138,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5322",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_bcdd83f95f0d00cd8198253d0a077ad9",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Wrong PIN. 2 attempts left\nEnter your PIN",
+      "serverMs": 102
+    },
+    {
+      "at": "2026-10-11T07:42:55.918Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 145,
+        "bodyBytes": 145,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5322",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_bcdd83f95f0d00cd8198253d0a077ad9",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GA6R..ZCNA\nBalance 2.00 USDC\nLast received 2.00 USDC, 7 Oct\nTest only, no funds move",
+      "serverMs": 902
+    },
+    {
+      "at": "2026-10-11T07:44:27.975Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_a260a6c4d4df0b4d63d246ee26ebbbff",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-11T07:44:35.579Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_a260a6c4d4df0b4d63d246ee26ebbbff",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 4
+    },
+    {
+      "at": "2026-10-11T07:44:44.238Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 138,
+        "bodyBytes": 138,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_a260a6c4d4df0b4d63d246ee26ebbbff",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GADZ..HMBZ\nBalance 2.50 USDC\nLast received 2.50 USDC, 7 Oct\nTest only, no funds move",
+      "serverMs": 942
+    },
+    {
+      "at": "2026-10-11T07:45:00.282Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_ba848f59f5d8767d994cfac631db03c6",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 8
+    },
+    {
+      "at": "2026-10-11T07:45:03.512Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "2",
+        "sessionId": "ATUid_ba848f59f5d8767d994cfac631db03c6",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Saleem, a payment service for basic phones.\nsaleem.digital\nTest only, no funds move",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-11T07:47:44.558Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5355",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_32d458b8815ae0e614f1e591b6c6ea4a",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 9
+    },
+    {
+      "at": "2026-10-11T07:47:50.093Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5355",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_32d458b8815ae0e614f1e591b6c6ea4a",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 4
+    },
+    {
+      "at": "2026-10-11T07:47:57.584Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 138,
+        "bodyBytes": 138,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5355",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_32d458b8815ae0e614f1e591b6c6ea4a",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GCKM..XAAX\nBalance 3.50 USDC\nLast received 3.50 USDC, 7 Oct\nTest only, no funds move",
+      "serverMs": 907
+    },
+    {
+      "at": "2026-10-11T07:50:08.856Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_a465ebe06da176aa79bd06fe97ed9a7b",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-11T07:50:15.004Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_a465ebe06da176aa79bd06fe97ed9a7b",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Create a 4 digit PIN",
+      "serverMs": 5
+    },
+    {
+      "at": "2026-10-11T07:50:18.655Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 138,
+        "bodyBytes": 138,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_a465ebe06da176aa79bd06fe97ed9a7b",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON That PIN is too easy to guess\nChoose a less obvious one",
+      "serverMs": 1
+    },
+    {
+      "at": "2026-10-11T07:50:24.119Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 145,
+        "bodyBytes": 145,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_a465ebe06da176aa79bd06fe97ed9a7b",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON That PIN is too easy to guess\nChoose a less obvious one",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-11T07:50:28.041Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 152,
+        "bodyBytes": 152,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####*####",
+        "sessionId": "ATUid_a465ebe06da176aa79bd06fe97ed9a7b",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter the PIN again",
+      "serverMs": 1
+    },
+    {
+      "at": "2026-10-11T07:50:31.749Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 159,
+        "bodyBytes": 159,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####*####*####",
+        "sessionId": "ATUid_a465ebe06da176aa79bd06fe97ed9a7b",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Service unavailable.\nPlease try again later.",
+      "serverMs": 148
+    },
+    {
+      "at": "2026-10-11T07:50:38.246Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 130,
+        "bodyBytes": 130,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_58b62b8fadb9f86dd32d0cd4a89f1079",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-11T07:50:41.109Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 131,
+        "bodyBytes": 131,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_58b62b8fadb9f86dd32d0cd4a89f1079",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 3
+    },
+    {
+      "at": "2026-10-11T07:50:45.088Z",
+      "request": {
+        "method": "POST",
+        "pathSegmentLengths": [
+          4,
+          24
+        ],
+        "pathMatches": true,
+        "hasQuery": false,
+        "contentType": "application/x-www-form-urlencoded",
+        "contentLength": 138,
+        "bodyBytes": 138,
+        "userAgent": "at-ussd-api/1.0",
+        "forwardedFor": "18.133.205.228",
+        "connectingIp": "18.133.205.228",
+        "forwardedProto": "https",
+        "country": "GB",
+        "remoteAddress": "::1"
+      },
+      "fields": {
+        "phoneNumber": "+2547***5344",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_58b62b8fadb9f86dd32d0cd4a89f1079",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GBFQ..FAVO\nBalance 3.00 USDC\nLast received 3.00 USDC, 7 Oct\nTest only, no funds move",
+      "serverMs": 867
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-10-11T07:10:28.462Z",
+      "line": "session=readiness-1791702628024 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:21:24.864Z",
+      "line": "session=diag-after-dial event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:28:52.110Z",
+      "line": "session=ATUid_b6b6117ac5026727a3d7ea190f140367 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:32:58.737Z",
+      "line": "session=ATUid_cb2fa9feafd846805f1f4c47e9018678 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:36:02.522Z",
+      "line": "session=ATUid_5e05c1355b36b0a114d1524ed1dbcf30 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:36:07.524Z",
+      "line": "session=ATUid_5e05c1355b36b0a114d1524ed1dbcf30 event=step state=welcome>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:36:11.922Z",
+      "line": "session=ATUid_5e05c1355b36b0a114d1524ed1dbcf30 event=pinRejected left=2"
+    },
+    {
+      "at": "2026-10-11T07:36:11.923Z",
+      "line": "session=ATUid_5e05c1355b36b0a114d1524ed1dbcf30 event=step state=pinEnter>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:36:50.137Z",
+      "line": "session=ATUid_5e05c1355b36b0a114d1524ed1dbcf30 event=pinVerified"
+    },
+    {
+      "at": "2026-10-11T07:36:51.010Z",
+      "line": "session=ATUid_5e05c1355b36b0a114d1524ed1dbcf30 event=accountScreen path=returning hasLastReceived=true"
+    },
+    {
+      "at": "2026-10-11T07:36:51.011Z",
+      "line": "session=ATUid_5e05c1355b36b0a114d1524ed1dbcf30 event=step state=pinEnter>done"
+    },
+    {
+      "at": "2026-10-11T07:37:59.766Z",
+      "line": "session=ATUid_7df30a39f18e6495ece8bded5df6a3e7 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:38:06.359Z",
+      "line": "session=ATUid_7df30a39f18e6495ece8bded5df6a3e7 event=step state=welcome>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:38:17.660Z",
+      "line": "session=ATUid_7df30a39f18e6495ece8bded5df6a3e7 event=pinRejected left=2"
+    },
+    {
+      "at": "2026-10-11T07:38:17.660Z",
+      "line": "session=ATUid_7df30a39f18e6495ece8bded5df6a3e7 event=step state=pinEnter>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:38:30.423Z",
+      "line": "session=ATUid_7df30a39f18e6495ece8bded5df6a3e7 event=pinVerified"
+    },
+    {
+      "at": "2026-10-11T07:38:31.248Z",
+      "line": "session=ATUid_7df30a39f18e6495ece8bded5df6a3e7 event=accountScreen path=returning hasLastReceived=true"
+    },
+    {
+      "at": "2026-10-11T07:38:31.248Z",
+      "line": "session=ATUid_7df30a39f18e6495ece8bded5df6a3e7 event=step state=pinEnter>done"
+    },
+    {
+      "at": "2026-10-11T07:42:14.965Z",
+      "line": "session=ATUid_bcdd83f95f0d00cd8198253d0a077ad9 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:42:19.060Z",
+      "line": "session=ATUid_bcdd83f95f0d00cd8198253d0a077ad9 event=step state=welcome>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:42:25.902Z",
+      "line": "session=ATUid_bcdd83f95f0d00cd8198253d0a077ad9 event=pinRejected left=2"
+    },
+    {
+      "at": "2026-10-11T07:42:25.902Z",
+      "line": "session=ATUid_bcdd83f95f0d00cd8198253d0a077ad9 event=step state=pinEnter>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:42:56.013Z",
+      "line": "session=ATUid_bcdd83f95f0d00cd8198253d0a077ad9 event=pinVerified"
+    },
+    {
+      "at": "2026-10-11T07:42:56.820Z",
+      "line": "session=ATUid_bcdd83f95f0d00cd8198253d0a077ad9 event=accountScreen path=returning hasLastReceived=true"
+    },
+    {
+      "at": "2026-10-11T07:42:56.820Z",
+      "line": "session=ATUid_bcdd83f95f0d00cd8198253d0a077ad9 event=step state=pinEnter>done"
+    },
+    {
+      "at": "2026-10-11T07:44:27.977Z",
+      "line": "session=ATUid_a260a6c4d4df0b4d63d246ee26ebbbff event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:44:35.583Z",
+      "line": "session=ATUid_a260a6c4d4df0b4d63d246ee26ebbbff event=step state=welcome>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:44:44.339Z",
+      "line": "session=ATUid_a260a6c4d4df0b4d63d246ee26ebbbff event=pinVerified"
+    },
+    {
+      "at": "2026-10-11T07:44:45.180Z",
+      "line": "session=ATUid_a260a6c4d4df0b4d63d246ee26ebbbff event=accountScreen path=returning hasLastReceived=true"
+    },
+    {
+      "at": "2026-10-11T07:44:45.180Z",
+      "line": "session=ATUid_a260a6c4d4df0b4d63d246ee26ebbbff event=step state=pinEnter>done"
+    },
+    {
+      "at": "2026-10-11T07:45:00.290Z",
+      "line": "session=ATUid_ba848f59f5d8767d994cfac631db03c6 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:45:03.513Z",
+      "line": "session=ATUid_ba848f59f5d8767d994cfac631db03c6 event=step state=welcome>done"
+    },
+    {
+      "at": "2026-10-11T07:47:44.567Z",
+      "line": "session=ATUid_32d458b8815ae0e614f1e591b6c6ea4a event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:47:50.096Z",
+      "line": "session=ATUid_32d458b8815ae0e614f1e591b6c6ea4a event=step state=welcome>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:47:57.669Z",
+      "line": "session=ATUid_32d458b8815ae0e614f1e591b6c6ea4a event=pinVerified"
+    },
+    {
+      "at": "2026-10-11T07:47:58.490Z",
+      "line": "session=ATUid_32d458b8815ae0e614f1e591b6c6ea4a event=accountScreen path=returning hasLastReceived=true"
+    },
+    {
+      "at": "2026-10-11T07:47:58.490Z",
+      "line": "session=ATUid_32d458b8815ae0e614f1e591b6c6ea4a event=step state=pinEnter>done"
+    },
+    {
+      "at": "2026-10-11T07:50:08.858Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:50:15.009Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=step state=welcome>pinSetup1"
+    },
+    {
+      "at": "2026-10-11T07:50:18.656Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=pinSetupWeakRejected"
+    },
+    {
+      "at": "2026-10-11T07:50:18.656Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=step state=pinSetup1>pinSetup1"
+    },
+    {
+      "at": "2026-10-11T07:50:24.121Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=pinSetupWeakRejected"
+    },
+    {
+      "at": "2026-10-11T07:50:24.121Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=step state=pinSetup1>pinSetup1"
+    },
+    {
+      "at": "2026-10-11T07:50:28.042Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=step state=pinSetup1>pinSetup2"
+    },
+    {
+      "at": "2026-10-11T07:50:31.852Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=pinSaved"
+    },
+    {
+      "at": "2026-10-11T07:50:31.897Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=viewFailed code=TypeError"
+    },
+    {
+      "at": "2026-10-11T07:50:31.897Z",
+      "line": "session=ATUid_a465ebe06da176aa79bd06fe97ed9a7b event=step state=pinSetup2>done"
+    },
+    {
+      "at": "2026-10-11T07:50:38.248Z",
+      "line": "session=ATUid_58b62b8fadb9f86dd32d0cd4a89f1079 event=start state=welcome"
+    },
+    {
+      "at": "2026-10-11T07:50:41.112Z",
+      "line": "session=ATUid_58b62b8fadb9f86dd32d0cd4a89f1079 event=step state=welcome>pinEnter"
+    },
+    {
+      "at": "2026-10-11T07:50:45.180Z",
+      "line": "session=ATUid_58b62b8fadb9f86dd32d0cd4a89f1079 event=pinVerified"
+    },
+    {
+      "at": "2026-10-11T07:50:45.955Z",
+      "line": "session=ATUid_58b62b8fadb9f86dd32d0cd4a89f1079 event=accountScreen path=returning hasLastReceived=true"
+    },
+    {
+      "at": "2026-10-11T07:50:45.955Z",
+      "line": "session=ATUid_58b62b8fadb9f86dd32d0cd4a89f1079 event=step state=pinEnter>done"
+    }
+  ]
+}

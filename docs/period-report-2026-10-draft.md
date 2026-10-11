@@ -69,10 +69,13 @@ described below.
 on the sandbox simulator
 (`docs/evidence/d3-ussd-provisioned-path-r5-2026-10-07.mp4`, 7 October).
 The five clips showing each recipient's paid balance after the batch have
-not yet been recorded; the dials after 13:27 UTC on 7 October and the
-dials on 10 October failed because the gateway dashboard held the
-hostname of an earlier tunnel (finding 4), and the session is the first
-item once the saved hostname is confirmed and a test dial passes.
+not been recorded on video; the dials after 13:27 UTC on 7 October and
+the dials on 10 October failed because the gateway dashboard held the
+hostname of an earlier tunnel (finding 4). On 11 October the five
+sessions were dialled in the sandbox simulator and captured as a masked
+transcript (`EVIDENCE.md`, "2026-10-11: Deliverable 4, part 3, third
+attempt"), which closes evidence row 4.3; the video clips remain to be
+recorded.
 
 ## The batch, in one paragraph
 
@@ -133,9 +136,8 @@ balance on the ledger now equals the amount in the file.
 
 ## What remains
 
-- The recorded USSD sessions after the batch (five recipients, the
-  returning path with one wrong PIN, and the About screen), then
-  evidence row 4.3 and the demo video cut.
+- The demo video cut of the USSD sessions after the batch (the sessions
+  themselves were captured on 11 October, evidence row 4.3).
 - Review and merge of the bridge's four pull requests, in order #1, #2,
   #3, #4, by the project's two reviewers.
 - Merge of the adapter's note pull request #17.

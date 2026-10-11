@@ -23,7 +23,7 @@ Deliverable 1 (SDP 7.0.0 testnet tenant): delivered 7 October 2026. See
 
 Deliverable 4 (end-to-end batch and evidence package): batch delivered
 7 October 2026 (five USDC payments on testnet, confirmed on Horizon);
-the recorded USSD sessions after the batch are outstanding, see
+the USSD sessions after the batch were captured on 11 October 2026, see
 `EVIDENCE.md`. Evidence package: `docs/instaward-evidence-package.md`.
 
 Deliverable 3 (USSD receive and balance view): delivered 7 October 2026.

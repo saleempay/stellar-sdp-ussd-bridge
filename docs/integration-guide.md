@@ -90,6 +90,13 @@ reopen the channel and confirm the saved host matches the printed
 hostname, then dial the service code from the gateway's simulator. The
 banner shows the path masked; never paste the full value anywhere.
 
+A saved callback may not reach the gateway at once. On 11 October 2026 a
+callback saved in the sandbox dashboard at 07:17 and again at 07:22 UTC
+was still dialled on the previously saved hostname at 07:20 and 07:23
+(Session Details named that hostname in the error message) and on the new
+hostname at 07:28:52. After saving, make a test dial and read the Error
+Message in USSD, Sessions, Details: it names the host the gateway used.
+
 ### Tunnel modes and a fixed hostname
 
 | `USSD_TUNNEL_MODE` | What runs | Hostname |

@@ -457,6 +457,8 @@ parsed 13 screens from `docs/ussd-menu-walkthrough-v1.md` and matched each
 byte for byte; the budget test rendered 24 screens at their longest values,
 the longest being the account screen at 125 of 156 characters.
 
+Corrected on 11 October 2026, see the entry of that date.
+
 ### Session set 4: recipient r5, recorded on video (13:25 UTC)
 
 Ramy Soliman recorded the simulator with QuickTime while the session was
@@ -600,6 +602,8 @@ each receiver with its transaction hash and Success status),
 dashboard shows the recipients' synthetic numbers in full; they are test
 numbers in the sandbox convention and belong to no one.
 
+Corrected on 11 October 2026, see the entry of that date.
+
 ## 2026-10-07: Deliverable 4, part 3: USSD sessions after the batch, OUTSTANDING
 
 The recorded USSD sessions showing each recipient's paid balance and the
@@ -615,6 +619,8 @@ callback paths were tried; the last attempts, two test dials on r1 at
 14:16 UTC, failed the same way. The session set is carried to the next
 working day with a fresh tunnel and a fresh callback path, in the order
 r1, r2 (with one wrong PIN), r3 (then About), r5, r4 (one attempt).
+
+Corrected on 11 October 2026, see the entry of that date.
 
 ## 2026-10-10: Deliverable 4, part 3, second attempt: sandbox still failing, OUTSTANDING
 
@@ -753,3 +759,89 @@ and `docs/instaward-evidence-package.md` (row 4.3) are corrected in the
 same commit. `README.md`, `docs/walkthrough-deviations.md` and
 `docs/demo-video-plan.md` carry no sentence attributing the failures to
 the gateway and are unchanged.
+
+## 2026-10-11: Deliverable 4, part 3, third attempt: the five USSD sessions after the batch, CAPTURED
+
+### What this section proves, in plain language
+
+Each of the five recipients paid by the 7 October batch dialled the
+sandbox service code in the Africa's Talking sandbox simulator and saw
+the account screen with the balance the batch paid and the "Last
+received" line for that payment. r1 and r2 entered one wrong PIN first
+(E1). r3 also opened the About screen. r4, which had no PIN, set one on
+first dial (D-1) after two attempts rejected as too easy to guess (A-4);
+its account read then failed once (E4) and a second dial showed the
+account screen. Evidence row 4.3 is captured.
+
+### Environment
+
+- Capture server from 07:10 UTC (branch `d4-batch-evidence`, the capture
+  script owning the tunnel): a cloudflared quick tunnel started at
+  07:10:22 UTC on hostname `sas-truly-relates-gather.trycloudflare.com`,
+  written to the record as the only tunnel start of the session; a fresh
+  callback path in `.env`.
+- Readiness at 07:10:28 UTC: the hostname resolved on 1.1.1.1 and 8.8.8.8,
+  and a well-formed gateway POST through the public URL returned screen 1
+  (200, 5 ms); the script then printed READY TO DIAL.
+- Record: `docs/evidence/d4-ussd-capture-2026-10-11.json` (MSISDNs masked,
+  every four-digit input masked, callback path never written; the
+  operator's own address on the probes replaced by `<operator address>`;
+  the gateway's address kept). The record also holds the tunnel start and
+  both readiness checks.
+
+### The callback save and the delay, as observed on this day
+
+The callback URL (https, the hostname above, the path, no trailing slash)
+was saved on channel `*384*45210#` in the sandbox dashboard at 07:17 UTC
+and the Service Codes page showed it after a reload. A test dial at 07:20
+failed; the dashboard's Session Details named the cause: UnknownHostException
+for the hostname saved on 10 October. The callback was saved again at
+07:22; a dial at 07:23 failed the same way, naming the same old hostname.
+A dial at 07:28:52 reached the server (the first gateway request in the
+record: POST on the callback path, user agent `at-ussd-api/1.0`, source
+`18.133.205.228`, forwarded protocol https) and the simulator showed
+screen 1. Those are the four times as observed once: saved 07:17 and
+07:22, old host dialled at 07:20 and 07:23, new host at 07:28:52.
+
+### The sessions (times UTC, inputs masked)
+
+Every gateway request in the record is a POST on the callback path with
+user agent `at-ussd-api/1.0` from `18.133.205.228`, answered 200; the
+slowest answer took 968 ms (the account screen, two Horizon reads). The
+31 requests fall into ten sessions:
+
+| Session | Number | Callbacks | Inputs | Final screen |
+|---|---|---|---|---|
+| 07:28:52 | r1 `+2547***5311` | 1 | (dial) | CON Saleem / 1. My account / 2. About (the connectivity dial, ended by the operator) |
+| 07:32:58 | r1 | 1 | (dial) | CON Saleem / 1. My account / 2. About (the operator's first dial from the simulator) |
+| 07:36:02 to 07:36:50 | r1 | 4 | (dial), 1, ####, #### | E1 "Wrong PIN. 2 attempts left" on the first PIN, then END Signed in as GDMN..QUUU / Balance 1.50 USDC / Last received 1.50 USDC, 7 Oct / Test only, no funds move |
+| 07:37:59 to 07:38:30 | r1 | 4 | (dial), 1, ####, #### | the same path again (the simulator was still connected as r1 when r2 was intended); same final screen |
+| 07:42:14 to 07:42:55 | r2 `+2547***5322` | 4 | (dial), 1, ####, #### | E1 on the first PIN, then END Signed in as GA6R..ZCNA / Balance 2.00 USDC / Last received 2.00 USDC, 7 Oct / Test only, no funds move |
+| 07:44:27 to 07:44:44 | r3 `+2547***5333` | 3 | (dial), 1, #### | END Signed in as GADZ..HMBZ / Balance 2.50 USDC / Last received 2.50 USDC, 7 Oct / Test only, no funds move |
+| 07:45:00 to 07:45:03 | r3 | 2 | (dial), 2 | END Saleem, a payment service for basic phones. / saleem.digital / Test only, no funds move |
+| 07:47:44 to 07:47:57 | r5 `+2547***5355` | 3 | (dial), 1, #### | END Signed in as GCKM..XAAX / Balance 3.50 USDC / Last received 3.50 USDC, 7 Oct / Test only, no funds move |
+| 07:50:08 to 07:50:31 | r4 `+2547***5344` | 6 | (dial), 1, ####, ####, ####, #### | Create a 4 digit PIN; two entries answered A-4 "That PIN is too easy to guess"; the third accepted, Enter the PIN again; after the matching entry the PIN was saved (event `pinSaved`) and the account read failed, END Service unavailable. / Please try again later. (E4) |
+| 07:50:38 to 07:50:45 | r4 | 3 | (dial), 1, #### | END Signed in as GBFQ..FAVO / Balance 3.00 USDC / Last received 3.00 USDC, 7 Oct / Test only, no funds move |
+
+The balances and "Last received" amounts match the batch of 7 October
+(1.5, 2, 2.5, 3 and 3.5 USDC, ledgers 5071608 to 5071614). r4 was planned
+as one attempt; the second dial followed the E4 answer.
+
+### Finding while running
+
+r4's first session ended with E4 immediately after the PIN was saved. The
+service log shows `event=viewFailed code=TypeError`: the Horizon client
+rethrows a failed `fetch` as the runtime's TypeError when the failure is
+neither a timeout (which becomes `HorizonTimeoutError`) nor a Horizon
+status (which becomes `HorizonResponseError`), so this was a transport
+failure on one of the two Horizon reads, not a timeout and not a Horizon
+error response. The same two reads succeeded 14 seconds later in the
+second session. E4 is the designed answer for any failure to read the
+account (N-3); the PIN was saved before the read, which is why the second
+dial went straight to "Enter your PIN". The `viewFailed` log line carries
+no cause for an uncoded error; adding the underlying error code to that
+line is a follow-up.
+
+### Offline checks
+
+Suite 143 passed, 2 skipped; typecheck clean; secret scan clean.
