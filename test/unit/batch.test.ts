@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SdpTenantClient } from '../../src/sdp/client.js';
-import { formatBatchReport, paymentsOf, runBatch, totalAmount, type BatchDeps } from '../../src/sdp/batch.js';
+import { PaymentsIncompleteError, formatBatchReport, paymentsOf, runBatch, totalAmount, type BatchDeps } from '../../src/sdp/batch.js';
 import { fakeFetch, type Recorded } from './helpers.js';
 
 const USDC = { code: 'USDC', issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' };
@@ -8,30 +8,50 @@ const DIST = 'G'.padEnd(56, 'D');
 const R1 = 'G'.padEnd(56, '1');
 const R2 = 'G'.padEnd(56, '2');
 
-/** A fake SDP whose payments advance one step per poll, plus a fake Horizon. */
-function fakeWorld(opts: { fail?: boolean; stuck?: boolean } = {}) {
+/**
+ * A fake SDP whose payments advance one step per poll, plus a fake Horizon.
+ * The payments list is served in pages of `pageSize` rows (default 2) with
+ * `pagination.next` set while rows remain, as the SDP does; the two rows
+ * of disbursement d1 sit on different pages behind rows of other
+ * disbursements, so a one-page reader would see only part of the batch.
+ */
+function fakeWorld(opts: { fail?: boolean; stuck?: boolean; pageSize?: number; totalPayments?: number } = {}) {
   let polls = 0;
   let status = 'READY';
   const sequence = opts.fail ? ['READY', 'PENDING', 'FAILED'] : ['READY', 'PENDING', 'SUCCESS'];
   const patched: Recorded[] = [];
+  const pageRequests: Array<{ page: number; pageLimit: number }> = [];
+  const pageSize = opts.pageSize ?? 2;
   const route = (r: Recorded) => {
-    const p = new URL(r.url).pathname;
+    const u = new URL(r.url);
+    const p = u.pathname;
     if (p === '/disbursements/d1/status') { patched.push(r); status = 'STARTED'; return { status: 200, body: {} }; }
     if (p === '/disbursements/d1') {
       const idx = Math.min(polls, sequence.length - 1);
       const final = sequence[idx] !== 'READY' && sequence[idx] !== 'PENDING';
-      return { status: 200, body: { id: 'd1', name: 'batch', status: status === 'STARTED' && final && !opts.stuck ? 'COMPLETED' : status } };
+      return { status: 200, body: { id: 'd1', name: 'batch', total_payments: opts.totalPayments ?? 2, status: status === 'STARTED' && final && !opts.stuck ? 'COMPLETED' : status } };
     }
     if (p === '/payments') {
-      const idx = Math.min(polls, sequence.length - 1);
-      polls += 1;
-      const st = opts.stuck ? 'PENDING' : sequence[idx];
+      const page = Number(u.searchParams.get('page') ?? '1');
+      const pageLimit = Number(u.searchParams.get('page_limit') ?? '20');
+      pageRequests.push({ page, pageLimit });
+      // one poll is one pass over the pages: advance the sequence on page 1 only
+      const idx = Math.min(page === 1 ? polls : polls - 1, sequence.length - 1);
+      if (page === 1) polls += 1;
+      const st = opts.stuck ? 'PENDING' : sequence[Math.max(idx, 0)];
       const tx = (s: string, n: string) => (s === 'SUCCESS' || s === 'FAILED' ? `${n}`.repeat(64) : null);
-      return { status: 200, body: { data: [
-        { id: 'p1', amount: '1.5000000', status: st, stellar_transaction_id: tx(st!, 'a'), disbursement: { id: 'd1' }, receiver_wallet: { stellar_address: R1, receiver: { id: 'r1' } } },
-        { id: 'p2', amount: '2.0000000', status: st, stellar_transaction_id: tx(st!, 'b'), disbursement: { id: 'd1' }, receiver_wallet: { stellar_address: R2, receiver: { id: 'r2' } } },
+      const all = [
         { id: 'px', amount: '9.0000000', status: 'SUCCESS', stellar_transaction_id: 'c'.repeat(64), disbursement: { id: 'other' } },
-      ], pagination: {} } };
+        { id: 'p1', amount: '1.5000000', status: st, stellar_transaction_id: tx(st!, 'a'), disbursement: { id: 'd1' }, receiver_wallet: { stellar_address: R1, receiver: { id: 'r1' } } },
+        { id: 'py', amount: '4.0000000', status: 'SUCCESS', stellar_transaction_id: 'd'.repeat(64), disbursement: { id: 'other' } },
+        { id: 'p2', amount: '2.0000000', status: st, stellar_transaction_id: tx(st!, 'b'), disbursement: { id: 'd1' }, receiver_wallet: { stellar_address: R2, receiver: { id: 'r2' } } },
+      ];
+      const start = (page - 1) * pageSize;
+      const data = all.slice(start, start + pageSize);
+      const pages = Math.ceil(all.length / pageSize);
+      const pagination: Record<string, unknown> = { pages, total: all.length };
+      if (page < pages) pagination.next = `/payments?page=${page + 1}&page_limit=${pageLimit}`;
+      return { status: 200, body: { data, pagination } };
     }
     return undefined;
   };
@@ -44,7 +64,7 @@ function fakeWorld(opts: { fail?: boolean; stuck?: boolean } = {}) {
   };
   let clock = Date.parse('2026-10-08T10:00:00Z');
   const deps: BatchDeps = { client, horizon, sleep: async (ms) => { clock += ms; }, now: () => clock };
-  return { deps, calls, patched };
+  return { deps, calls, patched, pageRequests };
 }
 
 describe('runBatch', () => {
@@ -88,10 +108,22 @@ describe('runBatch', () => {
     expect(r.started).toBe(false);
   });
 
-  it('paymentsOf keeps only the disbursement\'s payments', async () => {
+  it('paymentsOf reads every page at page_limit 100 and keeps only the disbursement\'s payments', async () => {
     const w = fakeWorld();
     const ps = await paymentsOf(w.deps.client, 'd1');
     expect(ps.map((p) => p.id)).toEqual(['p1', 'p2']);
+    expect(w.pageRequests).toEqual([{ page: 1, pageLimit: 100 }, { page: 2, pageLimit: 100 }]);
+  });
+
+  it('paymentsOf refuses a set whose count differs from the disbursement\'s rows', async () => {
+    const w = fakeWorld({ totalPayments: 3 });
+    await expect(paymentsOf(w.deps.client, 'd1', undefined, 3)).rejects.toBeInstanceOf(PaymentsIncompleteError);
+    expect(await paymentsOf(w.deps.client, 'd1', undefined, 2)).toHaveLength(2);
+  });
+
+  it('runBatch fails rather than judging a batch complete on a partial set', async () => {
+    const w = fakeWorld({ totalPayments: 3 });
+    await expect(runBatch(w.deps, { disbursementId: 'd1', asset: USDC, pollMs: 1000 })).rejects.toThrow(/incomplete/);
   });
 
   it('masks accounts in the report and never carries a full address', async () => {

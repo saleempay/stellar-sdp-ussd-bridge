@@ -224,6 +224,8 @@ export interface Disbursement {
   name: string;
   status: string;
   registration_contact_type?: string;
+  /** Payment rows of the disbursement (internal/data/disbursements.go:43). */
+  total_payments?: number;
   [key: string]: unknown;
 }
 
@@ -467,11 +469,16 @@ export class SdpTenantClient {
     return json<Paginated<Receiver>>(res);
   }
 
-  /** GET /payments, paginated. */
-  async listPayments(walletId?: string): Promise<Paginated<Payment>> {
+  /**
+   * GET /payments, one page. page_limit defaults to 20 and is capped at 100
+   * (validators/query_validator.go:23-24); there is no disbursement filter
+   * (internal/data/payments.go:69), so callers filter and must page.
+   */
+  async listPayments(walletId?: string, page?: { page: number; pageLimit: number }): Promise<Paginated<Payment>> {
+    const qs = page ? `?page=${page.page}&page_limit=${page.pageLimit}` : '';
     const res = await send(this.fetchImpl, this.base, {
       method: 'GET',
-      path: '/payments',
+      path: `/payments${qs}`,
       headers: this.headers(this.walletHeader(walletId)),
     });
     return json<Paginated<Payment>>(res);

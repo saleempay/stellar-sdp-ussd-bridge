@@ -4,12 +4,16 @@
  * bridge's Horizon client, so the offline tests drive it with fakes.
  *
  * SDP 7.0.0 facts used: PATCH /disbursements/{id}/status {"status":"STARTED"}
- * (disbursement_handler.go:96-98), GET /payments paginated with the
- * payment's `status`, `stellar_transaction_id` and nested `disbursement.id`
- * (internal/data/payments.go), statuses DRAFT READY PENDING PAUSED SUCCESS
- * FAILED CANCELED (payments_state_machine.go), the payment job interval
- * SCHEDULER_PAYMENT_JOB_SECONDS. Horizon: GET /transactions/{hash} and its
- * operations (payment: from, to, amount, asset_code, asset_issuer).
+ * (disbursement_handler.go:96-98), GET /payments paginated (page_limit
+ * default 20, maximum 100, validators/query_validator.go:23-24; no
+ * disbursement filter, internal/data/payments.go:69; `pagination.next`
+ * present while more pages exist, httpresponse/paginated_response.go) with
+ * the payment's `status`, `stellar_transaction_id` and nested
+ * `disbursement.id`, the disbursement's `total_payments`
+ * (internal/data/disbursements.go:43), statuses DRAFT READY PENDING PAUSED
+ * SUCCESS FAILED CANCELED (payments_state_machine.go), the payment job
+ * interval SCHEDULER_PAYMENT_JOB_SECONDS. Horizon: GET /transactions/{hash}
+ * and its operations (payment: from, to, amount, asset_code, asset_issuer).
  */
 import type { Payment, SdpTenantClient } from './client.js';
 import { maskAccount } from './facts.js';
@@ -84,10 +88,36 @@ function snapshot(p: Payment): PaymentSnapshot {
   };
 }
 
-/** Payments of one disbursement, from the tenant's paginated list. */
-export async function paymentsOf(client: SdpTenantClient, disbursementId: string, walletId?: string): Promise<Payment[]> {
-  const page = await client.listPayments(walletId);
-  return page.data.filter((p) => (p.disbursement as { id?: string } | undefined)?.id === disbursementId);
+export const PAYMENTS_PAGE_LIMIT = 100;
+
+/** The listed payments do not add up to the disbursement's rows; the set is not complete. */
+export class PaymentsIncompleteError extends Error {
+  constructor(readonly disbursementId: string, readonly listed: number, readonly expected: number) {
+    super(`disbursement ${disbursementId} has ${expected} payment rows but ${listed} were listed; the payment set is incomplete`);
+    this.name = 'PaymentsIncompleteError';
+  }
+}
+
+/**
+ * Payments of one disbursement: every page of the tenant's list at the
+ * maximum page size, filtered client-side, until no next page remains.
+ * When the expected count is given (the disbursement's total_payments),
+ * the set is refused unless the count matches, so a partial set can never
+ * be judged complete.
+ */
+export async function paymentsOf(client: SdpTenantClient, disbursementId: string, walletId?: string, expectedCount?: number): Promise<Payment[]> {
+  const found: Payment[] = [];
+  for (let page = 1; ; page += 1) {
+    const res = await client.listPayments(walletId, { page, pageLimit: PAYMENTS_PAGE_LIMIT });
+    for (const p of res.data) {
+      if ((p.disbursement as { id?: string } | undefined)?.id === disbursementId) found.push(p);
+    }
+    if (!res.pagination?.next || res.data.length === 0) break;
+  }
+  if (expectedCount !== undefined && found.length !== expectedCount) {
+    throw new PaymentsIncompleteError(disbursementId, found.length, expectedCount);
+  }
+  return found;
 }
 
 export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<BatchResult> {
@@ -105,7 +135,7 @@ export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<Bat
   let timedOut = false;
   for (;;) {
     const d = await deps.client.getDisbursement(opts.disbursementId, opts.walletId);
-    const payments = (await paymentsOf(deps.client, opts.disbursementId, opts.walletId)).map(snapshot);
+    const payments = (await paymentsOf(deps.client, opts.disbursementId, opts.walletId, d.total_payments)).map(snapshot);
     finalStatus = d.status;
     const key = `${d.status}|${payments.map((p) => `${p.id}:${p.status}:${p.txHash ?? ''}`).join(',')}`;
     if (key !== lastKey) {

@@ -46,7 +46,8 @@ const account = accounts.find((a) => a.id === walletId) ?? accounts[0];
 const horizon = new FetchHorizon(TESTNET_HORIZON_URL, { timeoutMs: 20_000 });
 
 const d = await client.getDisbursement(disbursementId, walletId);
-const payments = await paymentsOf(client, disbursementId, walletId);
+// every page, and the count must equal the disbursement's rows
+const payments = await paymentsOf(client, disbursementId, walletId, d.total_payments);
 const total = totalAmount(payments);
 const onChain = await horizon.loadAccount(account.distribution_account_address);
 const usdc = onChain.balances.find((b) => b.asset_code === asset.code && b.asset_issuer === asset.issuer)?.balance ?? '0';
