@@ -4,7 +4,9 @@
  * exactly one of `machine` or `handle`), the
  * adapter's gateway adapter, session store and PIN store, the bridge's
  * account view over Horizon, and sponsored creation on dial through the
- * adapter's resolveOrCreateAccount with the Deliverable 2 sponsor.
+ * bridge's createOnDial (one creation in flight per number, an on-chain
+ * check before an ambiguous failure is reported) with the Deliverable 2
+ * sponsor.
  */
 import {
   AfricasTalkingGateway,
@@ -16,7 +18,6 @@ import {
   SESSION_LEG_TIMEOUT_MS,
   createUssdRequestListener,
   parseCidrList,
-  resolveOrCreateAccount,
   type AccountStore,
   type GatewayStep,
   type PinStore,
@@ -24,8 +25,10 @@ import {
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { FetchHorizon } from '../provision/horizon.js';
+import { InMemoryPendingStore, JsonFilePendingStore, type PendingCreationStore } from '../provision/pending.js';
 import { TESTNET_HORIZON_URL, TESTNET_NETWORK_PASSPHRASE, TESTNET_USDC_ISSUER, USDC_CODE } from '../sdp/facts.js';
 import { loadAccountView } from './accountView.js';
+import { createOnDial } from './createOnDial.js';
 import { handleBridgeStep, type BridgeMachineDeps } from './machine.js';
 
 export interface UssdServerConfig {
@@ -88,8 +91,11 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
     const sponsorPublicKey = signer.importSecret(cfg.sponsorSecretKey);
     // creation uses a longer deadline than a read: one Horizon submission
     const creationHorizon = new FetchHorizon(cfg.horizonUrl ?? TESTNET_HORIZON_URL, { timeoutMs: 8_000 });
+    // the same pending store the command line writes (pending.ts)
+    const pendingStore: PendingCreationStore = cfg.dataDir ? new JsonFilePendingStore(join(cfg.dataDir, 'pending-creations.json')) : new InMemoryPendingStore();
+    const create = createOnDial({ store: accounts, signer, horizon: creationHorizon, networkPassphrase, sponsorPublicKey, asset, pendingStore, log });
     createAccount = async (msisdn) => {
-      const r = await resolveOrCreateAccount({ store: accounts, signer, horizon: creationHorizon, networkPassphrase, sponsorPublicKey, asset }, msisdn);
+      const r = await create(msisdn);
       return r.creationTxHash ? { accountId: r.accountId, creationTxHash: r.creationTxHash } : { accountId: r.accountId };
     };
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryAccountStore, InMemoryPinStore, InMemorySessionStore, verifyPin, type GatewayStep } from 'stellar-ussd-sep10-adapter';
-import { AccountNotOnChainError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
+import { AccountNotOnChainError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, withInFlightGuard, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
 
 const MSISDN = '+999738035311';
 const ACCOUNT = 'G'.padEnd(56, 'Q');
@@ -140,6 +140,31 @@ describe('entry state: no account, no PIN (first use)', () => {
     const final = await s(PIN);
     expect(final.kind).toBe('end');
     expect(final.text).toContain('Signed in as GQQQ..QQQQ');
+  });
+
+  it('two overlapping sessions for one number share one creation: the second awaits the first (in-flight guard)', async () => {
+    const f = setup({ view: { balance: '0.0000000' } });
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    f.deps.createAccount = withInFlightGuard(async (m) => { calls += 1; await gate; await f.accounts.put(m, ACCOUNT); return { accountId: ACCOUNT, creationTxHash: 'ab'.repeat(32) }; });
+    // session A: PIN set, then 1 starts the creation, which is slow
+    const a = f.dial('a');
+    await a(); await a('1'); await a(PIN);
+    expect((await a(PIN)).text).toBe('PIN saved\n1. Create your account and continue');
+    const pendingA = a('1');
+    // session B for the same number while A's creation is still running: the PIN
+    // exists, the mapping does not, so B reaches the create step too
+    const b = f.dial('b');
+    await b();
+    expect((await b('1')).text).toBe('Enter your PIN');
+    expect((await b(PIN)).text).toBe('PIN accepted\n1. Create your account and continue');
+    const pendingB = b('1');
+    release();
+    expect((await pendingA).text).toBe('Account ready\nEnter your PIN');
+    expect((await pendingB).text).toBe('Account ready\nEnter your PIN');
+    expect(calls).toBe(1);
+    expect(await f.accounts.get(MSISDN)).toBe(ACCOUNT);
   });
 
   it('with creation on dial off, E3 is shown and nothing is created', async () => {
