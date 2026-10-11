@@ -63,7 +63,7 @@ const dir = join('test-output', 'd4-batch', run);
 mkdirSync(dir, { recursive: true });
 const result = await runBatch(
   { client, horizon, sleep: (ms) => new Promise((r) => setTimeout(r, ms)), now: () => Date.now() },
-  { disbursementId, walletId, asset, timeoutMs, skipStart },
+  { disbursementId, walletId, asset, timeoutMs, skipStart, distributionAccount: account.distribution_account_address },
 );
 console.log(formatBatchReport(result));
 const after = await horizon.loadAccount(account.distribution_account_address);

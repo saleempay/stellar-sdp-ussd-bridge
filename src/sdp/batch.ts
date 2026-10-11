@@ -55,6 +55,11 @@ export interface BatchOptions {
   asset: { code: string; issuer: string };
   /** When true, do not send the STARTED patch (the batch was already started). */
   skipStart?: boolean;
+  /**
+   * The distribution account the batch pays from, full address. When given,
+   * the Horizon confirmation also checks the payment's source.
+   */
+  distributionAccount?: string;
 }
 
 export interface ConfirmedPayment extends PaymentSnapshot {
@@ -74,6 +79,20 @@ export interface BatchResult {
   timedOut: boolean;
   timeline: TimelineEntry[];
   payments: ConfirmedPayment[];
+}
+
+/** The recipient address of a payment row, full, for the confirmation only; never serialised. */
+function recipientOf(p: Payment): string | undefined {
+  return (p.receiver_wallet as { stellar_address?: string } | undefined)?.stellar_address;
+}
+
+/** Decimal amount strings compared as stroops: "1.5" equals "1.5000000". */
+function sameAmount(a: string, b: string): boolean {
+  try {
+    return totalAmount([{ amount: a }]) === totalAmount([{ amount: b }]);
+  } catch {
+    return false;
+  }
 }
 
 function snapshot(p: Payment): PaymentSnapshot {
@@ -133,9 +152,16 @@ export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<Bat
   let lastKey = '';
   let finalStatus = '';
   let timedOut = false;
+  /** Full recipient address per payment id, kept out of every serialised structure. */
+  const recipients = new Map<string, string>();
   for (;;) {
     const d = await deps.client.getDisbursement(opts.disbursementId, opts.walletId);
-    const payments = (await paymentsOf(deps.client, opts.disbursementId, opts.walletId, d.total_payments)).map(snapshot);
+    const raw = await paymentsOf(deps.client, opts.disbursementId, opts.walletId, d.total_payments);
+    for (const p of raw) {
+      const to = recipientOf(p);
+      if (to) recipients.set(p.id, to);
+    }
+    const payments = raw.map(snapshot);
     finalStatus = d.status;
     const key = `${d.status}|${payments.map((p) => `${p.id}:${p.status}:${p.txHash ?? ''}`).join(',')}`;
     if (key !== lastKey) {
@@ -174,6 +200,18 @@ export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<Bat
         const pay = ops.find((o) => o.type === 'payment' && o.asset_code === opts.asset.code && o.asset_issuer === opts.asset.issuer);
         if (pay && pay.from && pay.to && pay.amount) {
           c.operation = { from: maskAccount(pay.from), to: maskAccount(pay.to), amount: pay.amount, asset: `${pay.asset_code}:${maskAccount(pay.asset_issuer)}` };
+          // The confirmation means what the report says only if the
+          // operation pays this payment's recipient, this amount, from the
+          // distribution account; anything else is a mismatch, not a
+          // confirmation.
+          const problems: string[] = [];
+          const expectedTo = recipients.get(p.id);
+          if (!expectedTo) problems.push('the SDP row carries no recipient address to compare');
+          else if (pay.to !== expectedTo) problems.push(`recipient ${maskAccount(pay.to)} is not the SDP row's ${maskAccount(expectedTo)}`);
+          if (!sameAmount(pay.amount, p.amount)) problems.push(`amount ${pay.amount} is not the SDP row's ${p.amount}`);
+          if (opts.distributionAccount && pay.from !== opts.distributionAccount) problems.push(`source ${maskAccount(pay.from)} is not the distribution account ${maskAccount(opts.distributionAccount)}`);
+          if (tx.successful === false) problems.push('the transaction is not successful on Horizon');
+          if (problems.length) c.confirmError = `mismatch: ${problems.join('; ')}`;
         } else {
           c.confirmError = 'no USDC payment operation with the pinned issuer in this transaction';
         }

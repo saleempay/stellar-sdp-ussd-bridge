@@ -15,7 +15,7 @@ const R2 = 'G'.padEnd(56, '2');
  * of disbursement d1 sit on different pages behind rows of other
  * disbursements, so a one-page reader would see only part of the batch.
  */
-function fakeWorld(opts: { fail?: boolean; stuck?: boolean; pageSize?: number; totalPayments?: number } = {}) {
+function fakeWorld(opts: { fail?: boolean; stuck?: boolean; pageSize?: number; totalPayments?: number; wrong?: 'recipient' | 'amount' | 'source' | 'failed' } = {}) {
   let polls = 0;
   let status = 'READY';
   const sequence = opts.fail ? ['READY', 'PENDING', 'FAILED'] : ['READY', 'PENDING', 'SUCCESS'];
@@ -57,9 +57,15 @@ function fakeWorld(opts: { fail?: boolean; stuck?: boolean; pageSize?: number; t
   };
   const { fetchImpl, calls } = fakeFetch(route);
   const client = new SdpTenantClient({ baseUrl: 'http://api:8000', tenantName: 'bridge', token: 't', fetch: fetchImpl });
+  const OTHER = 'G'.padEnd(56, '9');
   const horizon: BatchDeps['horizon'] = {
-    async transaction(hash) { return { hash, ledger: 5_100_000, created_at: '2026-10-08T10:00:00Z', successful: true, source_account: DIST, operation_count: 1 }; },
-    async operationsOf(hash) { return [{ type: 'payment', created_at: '2026-10-08T10:00:00Z', transaction_hash: hash, from: DIST, to: hash.startsWith('a') ? R1 : R2, amount: hash.startsWith('a') ? '1.5000000' : '2.0000000', asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: USDC.issuer }]; },
+    async transaction(hash) { return { hash, ledger: 5_100_000, created_at: '2026-10-08T10:00:00Z', successful: opts.wrong !== 'failed', source_account: DIST, operation_count: 1 }; },
+    async operationsOf(hash) {
+      const to = opts.wrong === 'recipient' ? OTHER : hash.startsWith('a') ? R1 : R2;
+      const amount = opts.wrong === 'amount' ? '7.0000000' : hash.startsWith('a') ? '1.5000000' : '2.0000000';
+      const from = opts.wrong === 'source' ? OTHER : DIST;
+      return [{ type: 'payment', created_at: '2026-10-08T10:00:00Z', transaction_hash: hash, from, to, amount, asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: USDC.issuer }];
+    },
     async loadAccount() { throw new Error('not used'); },
   };
   let clock = Date.parse('2026-10-08T10:00:00Z');
@@ -84,6 +90,22 @@ describe('runBatch', () => {
     expect(r.payments.every((p) => p.ledger === 5_100_000 && p.successful)).toBe(true);
     expect(r.timeline.map((t) => t.payments.map((p) => p.status).join(','))).toEqual(['READY,READY', 'PENDING,PENDING', 'SUCCESS,SUCCESS']);
     expect(r.payments.every((p) => p.txHash && p.txHash.length === 64)).toBe(true);
+  });
+
+  it('confirms only when the operation pays the row\'s recipient, the row\'s amount, from the distribution account', async () => {
+    const ok = await runBatch(fakeWorld().deps, { disbursementId: 'd1', asset: USDC, pollMs: 1000, distributionAccount: DIST });
+    expect(ok.payments.every((p) => p.confirmError === undefined)).toBe(true);
+    for (const [wrong, text] of [
+      ['recipient', /recipient G999...9999 is not the SDP row's/],
+      ['amount', /amount 7.0000000 is not the SDP row's 1.5000000/],
+      ['source', /source G999...9999 is not the distribution account/],
+      ['failed', /not successful on Horizon/],
+    ] as const) {
+      const r = await runBatch(fakeWorld({ wrong }).deps, { disbursementId: 'd1', asset: USDC, pollMs: 1000, distributionAccount: DIST });
+      expect(r.payments[0]?.confirmError, wrong).toMatch(text);
+      expect(formatBatchReport(r)).toContain('confirm: mismatch');
+      expect(`${formatBatchReport(r)} ${JSON.stringify(r)}`).not.toContain(R1);
+    }
   });
 
   it('reports FAILED payments as terminal and does not pretend they succeeded', async () => {
