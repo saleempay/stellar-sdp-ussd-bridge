@@ -149,6 +149,10 @@ docker compose --env-file sdp/.env -f sdp/docker-compose.yml logs -f sdp-api
 docker compose --env-file sdp/.env -f sdp/docker-compose.yml ps
 ```
 
+With `EMAIL_SENDER_TYPE=DRY_RUN` the `sdp-api` log holds every password
+reset link the SDP has issued, so while a link is live that log is as
+sensitive as `sdp/.env`: do not paste it anywhere.
+
 To start again from nothing: `--reset`, then `npm run sdp:accounts --
 --force` (new accounts; the old ones stay funded on testnet and are
 abandoned), then `npm run sdp:up`. `sdp:accounts -- --force` refuses to

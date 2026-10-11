@@ -7,6 +7,7 @@ export * from './sdp/facts.js';
 export * from './sdp/client.js';
 export * from './sdp/readiness.js';
 export * from './sdp/env.js';
+export * from './sdp/resetToken.js';
 
 /** Deliverable 2: the recipient provisioning bridge. */
 export * from './provision/index.js';
