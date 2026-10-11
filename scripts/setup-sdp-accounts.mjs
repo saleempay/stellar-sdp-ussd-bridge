@@ -80,15 +80,6 @@ const channelEnc = Keypair.random();
 const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const ecPem = ec.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString().trim().replace(/\n/g, '\\n');
 
-console.log('Generated keypairs. Requesting Friendbot funding for the host distribution account...');
-const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(distribution.publicKey())}`);
-if (!res.ok) {
-  console.error(`Friendbot funding failed: HTTP ${res.status}`);
-  console.error((await res.text()).slice(0, 500));
-  process.exit(1);
-}
-const funding = await res.json();
-
 const values = {
   DISTRIBUTION_PUBLIC_KEY: distribution.publicKey(),
   DISTRIBUTION_SEED: distribution.secret(),
@@ -103,7 +94,20 @@ const values = {
   SCOPETEST_OWNER_PASSWORD: password(),
 };
 
-const template = readFileSync(TEMPLATE_PATH, 'utf8');
+// The template is validated before Friendbot is asked for anything: a
+// broken template must not cost a funded account.
+let template;
+try {
+  template = readFileSync(TEMPLATE_PATH, 'utf8');
+} catch {
+  console.error(`template ${TEMPLATE_PATH} not found`);
+  process.exit(1);
+}
+const unfilled = Object.keys(values).filter((k) => !new RegExp(`^${k}=`, 'm').test(template));
+if (unfilled.length) {
+  console.error(`template ${TEMPLATE_PATH} lacks keys: ${unfilled.join(', ')}`);
+  process.exit(1);
+}
 const filled = template
   .split('\n')
   .map((line) => {
@@ -112,11 +116,16 @@ const filled = template
     return `${m[1]}=${values[m[1]]}`;
   })
   .join('\n');
-const unfilled = Object.keys(values).filter((k) => !new RegExp(`^${k}=`, 'm').test(template));
-if (unfilled.length) {
-  console.error(`template ${TEMPLATE_PATH} lacks keys: ${unfilled.join(', ')}`);
+
+console.log('Generated keypairs. Requesting Friendbot funding for the host distribution account...');
+const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(distribution.publicKey())}`);
+if (!res.ok) {
+  console.error(`Friendbot funding failed: HTTP ${res.status}`);
+  console.error((await res.text()).slice(0, 500));
   process.exit(1);
 }
+const funding = await res.json();
+
 writeFileSync(ENV_PATH, `${filled.trimEnd()}\n`, { mode: 0o600 });
 chmodSync(ENV_PATH, 0o600);
 
