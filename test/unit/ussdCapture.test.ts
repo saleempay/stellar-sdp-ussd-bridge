@@ -24,10 +24,10 @@ describe('capture banner (adapter issue #8 rule)', () => {
 
 describe('transcript masking', () => {
   it('masks the MSISDN middle and every four digit token', () => {
-    expect(maskMsisdn('+254738035311')).toBe('+2547***5311');
+    expect(maskMsisdn('+999738035311')).toBe('+9997***5311');
     expect(maskPinTokens('1*4729*4729')).toBe('1*####*####');
     expect(maskPinTokens('1*2')).toBe('1*2');
-    expect(maskCallbackFields('sessionId=s1&phoneNumber=%2B254738035311&text=1*4729&serviceCode=*384*43808%23')).toEqual({ sessionId: 's1', phoneNumber: '+2547***5311', text: '1*####', serviceCode: '*384*43808#' });
+    expect(maskCallbackFields('sessionId=s1&phoneNumber=%2B999738035311&text=1*4729&serviceCode=*384*43808%23')).toEqual({ sessionId: 's1', phoneNumber: '+9997***5311', text: '1*####', serviceCode: '*384*43808#' });
   });
 });
 
@@ -63,7 +63,7 @@ describe('recording listener: request facts for every status', () => {
   const last = () => exchanges[exchanges.length - 1]!;
 
   it('records a gateway style POST: method, match, headers, lengths, masked fields', async () => {
-    const body = 'sessionId=s1&phoneNumber=%2B254738035311&text=1*4729&serviceCode=*384*45210%23';
+    const body = 'sessionId=s1&phoneNumber=%2B999738035311&text=1*4729&serviceCode=*384*45210%23';
     const res = await fetch(`${base}${PATH}`, {
       method: 'POST',
       headers: {
@@ -94,7 +94,7 @@ describe('recording listener: request facts for every status', () => {
       forwardedProto: 'https',
       country: 'KE',
     });
-    expect(e.fields).toEqual({ sessionId: 's1', phoneNumber: '+2547***5311', text: '1*####', serviceCode: '*384*45210#' });
+    expect(e.fields).toEqual({ sessionId: 's1', phoneNumber: '+9997***5311', text: '1*####', serviceCode: '*384*45210#' });
   });
 
   it('records a GET on the callback path as a 404 with no body and match=true', async () => {
@@ -107,7 +107,7 @@ describe('recording listener: request facts for every status', () => {
   });
 
   it('records a POST with a trailing slash as a 404 with match=false and a final 0 segment', async () => {
-    const res = await fetch(`${base}${PATH}/`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'sessionId=s2&phoneNumber=%2B254738035311&text=' });
+    const res = await fetch(`${base}${PATH}/`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'sessionId=s2&phoneNumber=%2B999738035311&text=' });
     expect(res.status).toBe(404);
     const e = last();
     expect(e.request).toMatchObject({ method: 'POST', pathMatches: false, pathSegmentLengths: [4, 32, 0], hasQuery: false });

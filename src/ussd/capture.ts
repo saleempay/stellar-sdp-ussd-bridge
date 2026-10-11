@@ -20,7 +20,7 @@ export function maskCallbackPath(path: string): string {
   return `/****${path.slice(-4)}`;
 }
 
-/** +254700000000 to +2547***0000 */
+/** +999700000000 to +9997***0000; the +999 country code is not assignable, so no number in it can belong to a subscriber */
 export function maskMsisdn(msisdn: string): string {
   const digits = msisdn.replace(/[^\d+]/g, '');
   if (digits.length <= 9) return digits;

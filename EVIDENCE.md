@@ -599,8 +599,9 @@ Dashboard, captured by the evidence script at 18:02 local time:
 disbursement page: 5 successful payments, 0 failed, 12.50 USDC disbursed,
 each receiver with its transaction hash and Success status),
 `docs/evidence/d4-payments.png` and `-2.png` (the payments list). The
-dashboard shows the recipients' synthetic numbers in full; they are test
-numbers in the sandbox convention and belong to no one.
+dashboard shows the recipients' synthetic numbers in full. (A sentence
+that followed here was removed on 11 October 2026 by ruling; see the
+entry of that date on the number range.)
 
 Corrected on 11 October 2026, see the entry of that date.
 
@@ -845,3 +846,47 @@ line is a follow-up.
 ### Offline checks
 
 Suite 143 passed, 2 skipped; typecheck clean; secret scan clean.
+
+## 2026-10-11: synthetic numbers moved to the non-assignable +999 range; dashboard captures masked
+
+### What this entry records, in plain language
+
+Until this date the five recipient numbers in the committed disbursement
+file, the numbers in the unit tests, the live test's generated numbers and
+the Deliverable 1 retest script's number were drawn from `+2547` followed
+by random digits. That range is live Kenyan mobile numbering, so a random
+draw can be the number of a real subscriber, and five such numbers were
+bound to testnet accounts in the SDP tenant and shown in full in two
+dashboard captures. Whether any of them belongs to someone cannot be
+known; the earlier sentence saying they "belong to no one" is withdrawn
+and removed from the 7 October entry (Deliverable 4, part 2) by ruling of
+11 October 2026. This is the only edit ever made inside an earlier entry.
+
+### What changed
+
+- Tests, the live provisioning test, `scripts/retest-d1.mjs`, the
+  readiness probe number and the masking examples now use the `+999`
+  country code, which is not assignable to any network (the adapter's own
+  tests use the same convention).
+- `docs/evidence/d2-disbursement.csv` now carries the same five accounts
+  and amounts under `+9997...` numbers whose last four digits match the
+  masked forms used throughout this file (`+9997***5311` and so on). Its
+  SHA-256 is `e156c2eb9fea48d3e65427548c88106f513bb206f234bcba453aca8d071c5072`. The file as uploaded to the SDP on 7 October
+  carried the `+2547` numbers and had SHA-256
+  `b4d8c873d47644ff5a45b2ab3b025be2a1834ac8446f917cdef0e73345e6a88f`;
+  git history keeps that version, so the numbers remain in history.
+- `docs/evidence/d4-disbursement-completed.png` and `-2.png` showed the
+  five numbers in full in the Contact info column. Both are replaced by
+  copies with that column masked to the convention; the originals remain
+  in git history. `d4-payments.png` and `-2.png` show no number and are
+  unchanged.
+- The SDP tenant on the evidence machine still holds the five receivers
+  under the `+2547` numbers from 7 October; they are not re-registered.
+  Any new provisioning run uses `+999` numbers.
+- The masked transcripts in `docs/evidence/*.json` carry only masked
+  forms (`+2547***5311`) and are unchanged.
+
+### Offline checks
+
+Suite, typecheck and secret scan: recorded in the pull request that
+carries this entry.

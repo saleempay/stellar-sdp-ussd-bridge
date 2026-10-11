@@ -12,8 +12,8 @@ function setup(opts: { sponsorXlm?: string } = {}) {
   return { horizon, signer, deps, ...s };
 }
 const rows: InputRow[] = [
-  { rowIndex: 1, phone: '+254700000001', id: 'r1', amount: '1.5' },
-  { rowIndex: 2, phone: '+254700000002', id: 'r2', amount: '2' },
+  { rowIndex: 1, phone: '+999700000001', id: 'r1', amount: '1.5' },
+  { rowIndex: 2, phone: '+999700000002', id: 'r2', amount: '2' },
 ];
 
 /** The fake Horizon does not decode XDR; after a successful creation the test registers the account on it. */
@@ -28,12 +28,12 @@ describe('provisionRecipients', () => {
     expect(report.outcomes.map((o) => o.status)).toEqual(['created', 'created']);
     expect(horizon.submissions).toHaveLength(2);
     expect(report.outcomes[0]?.txHash).toBe('hash-0001');
-    expect(await accountStore.get('+254700000001')).toBe(report.outcomes[0]?.accountId);
+    expect(await accountStore.get('+999700000001')).toBe(report.outcomes[0]?.accountId);
     expect(report.sdpRows).toEqual([
-      { phone: '+254700000001', walletAddress: report.outcomes[0]!.accountId, walletAddressMemo: '', id: 'r1', amount: '1.5', paymentID: 'batch-r1' },
-      { phone: '+254700000002', walletAddress: report.outcomes[1]!.accountId, walletAddressMemo: '', id: 'r2', amount: '2', paymentID: 'batch-r2' },
+      { phone: '+999700000001', walletAddress: report.outcomes[0]!.accountId, walletAddressMemo: '', id: 'r1', amount: '1.5', paymentID: 'batch-r1' },
+      { phone: '+999700000002', walletAddress: report.outcomes[1]!.accountId, walletAddressMemo: '', id: 'r2', amount: '2', paymentID: 'batch-r2' },
     ]);
-    expect(report.outcomes[0]?.phoneMasked).toBe('+2547***0001');
+    expect(report.outcomes[0]?.phoneMasked).toBe('+9997***0001');
   });
 
   it('a second run submits nothing, reports unchanged, and produces the same SDP rows', async () => {
@@ -48,7 +48,7 @@ describe('provisionRecipients', () => {
 
   it('adds only the trustline when the mapped account exists without one and the signer holds its key', async () => {
     const { horizon, deps, accountStore } = setup();
-    await accountStore.put('+254700000001', EXISTING);
+    await accountStore.put('+999700000001', EXISTING);
     horizon.addAccount(EXISTING, { xlm: '0', sponsored: 2 });
     deps.signer = Object.assign(new FakeSigner(), { keys: new Set([SPONSOR, EXISTING]) });
     const report = await provisionRecipients([rows[0]!], deps);
@@ -58,14 +58,14 @@ describe('provisionRecipients', () => {
 
   it('with the reference signer (no key for the mapped account) the trustline path reports signer_unavailable, not trustline_failure, and submits nothing', async () => {
     const { horizon, deps, accountStore } = setup();
-    await accountStore.put('+254700000001', EXISTING);
+    await accountStore.put('+999700000001', EXISTING);
     horizon.addAccount(EXISTING, { xlm: '0', sponsored: 2 });
     const report = await provisionRecipients([rows[0]!], deps);
     expect(report.outcomes[0]?.status).toBe('failed');
     expect(report.outcomes[0]?.errorCode).toBe('signer_unavailable');
     expect(report.outcomes[0]?.message).toContain('receive-only');
     expect(horizon.submissions).toHaveLength(0);
-    expect(await accountStore.get('+254700000001')).toBe(EXISTING);
+    expect(await accountStore.get('+999700000001')).toBe(EXISTING);
   });
 
   it('a failing row never stops the others and each failure carries its typed code', async () => {
@@ -74,8 +74,8 @@ describe('provisionRecipients', () => {
     const many: InputRow[] = [
       { rowIndex: 1, phone: 'not a phone', id: 'r1', amount: '1' },
       rows[0]!,
-      { rowIndex: 3, phone: '+254700000003', id: 'r3', amount: '1' },
-      { rowIndex: 4, phone: '+254700000004', id: 'r4', amount: '1' },
+      { rowIndex: 3, phone: '+999700000003', id: 'r3', amount: '1' },
+      { rowIndex: 4, phone: '+999700000004', id: 'r4', amount: '1' },
     ];
     const report = await provisionRecipients(many, deps);
     expect(report.outcomes.map((o) => [o.status, o.errorCode])).toEqual([
@@ -95,7 +95,7 @@ describe('provisionRecipients', () => {
       rejection('tx_failed', ['op_success', 'op_invalid_limit']),
       rejection('tx_failed', ['op_success', 'op_success', 'op_success', 'op_bad_auth']),
     ];
-    const many: InputRow[] = [rows[0]!, rows[1]!, { rowIndex: 3, phone: '+254700000003', id: 'r3', amount: '1' }];
+    const many: InputRow[] = [rows[0]!, rows[1]!, { rowIndex: 3, phone: '+999700000003', id: 'r3', amount: '1' }];
     const report = await provisionRecipients(many, deps);
     expect(report.outcomes.map((o) => o.errorCode)).toEqual(['trustline_failure', 'trustline_failure', 'resolver_failure']);
   });
@@ -125,11 +125,11 @@ describe('provisionRecipients', () => {
 
   it('a mapping whose account is not on chain is a resolver failure and the mapping is kept', async () => {
     const { deps, accountStore } = setup();
-    await accountStore.put('+254700000001', GONE);
+    await accountStore.put('+999700000001', GONE);
     const report = await provisionRecipients([rows[0]!], deps);
     expect(report.outcomes[0]?.errorCode).toBe('resolver_failure');
     expect(report.outcomes[0]?.message).toContain(`${GONE.slice(0, 4)}...${GONE.slice(-4)}`);
-    expect(await accountStore.get('+254700000001')).toBe(GONE);
+    expect(await accountStore.get('+999700000001')).toBe(GONE);
   });
 
   it('a store write failure after creation is a resolver failure that names the created account', async () => {
@@ -233,13 +233,13 @@ describe('ambiguous submissions (timeout, 5xx, no result codes)', () => {
 });
 
 describe('PIN binding (testnet pin column)', () => {
-  const withPin = (pin: string): InputRow => ({ rowIndex: 1, phone: '+254700000001', id: 'r1', amount: '1', pin });
+  const withPin = (pin: string): InputRow => ({ rowIndex: 1, phone: '+999700000001', id: 'r1', amount: '1', pin });
 
   it('stores a scrypt hash, never the PIN', async () => {
     const { deps, pinStore } = setup();
     const report = await provisionRecipients([withPin('4729')], deps);
     expect(report.outcomes[0]?.pin).toBe('set');
-    const record = await pinStore.get('+254700000001');
+    const record = await pinStore.get('+999700000001');
     expect(record?.hash).toMatch(/^scrypt\$/);
     expect(JSON.stringify(record)).not.toContain('4729');
   });
@@ -248,10 +248,10 @@ describe('PIN binding (testnet pin column)', () => {
     const { horizon, deps, pinStore } = setup();
     const first = await provisionRecipients([withPin('4729')], deps);
     await createdAccountsOnChain(horizon, first);
-    const before = (await pinStore.get('+254700000001'))!.hash;
+    const before = (await pinStore.get('+999700000001'))!.hash;
     const second = await provisionRecipients([withPin('8351')], deps);
     expect(second.outcomes[0]?.pin).toBe('kept');
-    expect((await pinStore.get('+254700000001'))!.hash).toBe(before);
+    expect((await pinStore.get('+999700000001'))!.hash).toBe(before);
     expect(await verifyPin('4729', before)).toBe(true);
     expect(await verifyPin('8351', before)).toBe(false);
   });
@@ -263,7 +263,7 @@ describe('PIN binding (testnet pin column)', () => {
       expect(report.outcomes[0]?.status).toBe('created');
       expect(report.outcomes[0]?.pin).toBe('refused');
       expect(report.outcomes[0]?.errorCode).toBe('pin_input');
-      expect(await pinStore.get('+254700000001')).toBeUndefined();
+      expect(await pinStore.get('+999700000001')).toBeUndefined();
       expect(report.counts.pinRefused).toBe(1);
     }
   });

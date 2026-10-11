@@ -51,7 +51,7 @@ export interface ProvisionReport {
   sdpRows: SdpRow[];
 }
 
-/** +2547***0678 style: country prefix and the last four digits. */
+/** +9997***0678 style: country prefix and the last four digits. */
 export function maskPhone(phone: string): string {
   if (phone.length <= 9) return phone;
   return `${phone.slice(0, 5)}***${phone.slice(-4)}`;

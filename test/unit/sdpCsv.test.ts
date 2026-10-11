@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { SDP_CSV_HEADER, SdpCsvFieldError, sha256Hex, writeSdpCsv } from '../../src/provision/index.js';
 
-const row = { phone: '+254700000001', walletAddress: 'GABC', walletAddressMemo: '', id: 'r1', amount: '1.5', paymentID: 'batch-r1' };
+const row = { phone: '+999700000001', walletAddress: 'GABC', walletAddressMemo: '', id: 'r1', amount: '1.5', paymentID: 'batch-r1' };
 
 describe('writeSdpCsv', () => {
   it('writes the 7.0.0 template header in the template order', () => {
     expect([...SDP_CSV_HEADER]).toEqual(['phone', 'walletAddress', 'walletAddressMemo', 'id', 'amount', 'paymentID']);
-    expect(writeSdpCsv([row])).toBe('phone,walletAddress,walletAddressMemo,id,amount,paymentID\n+254700000001,GABC,,r1,1.5,batch-r1\n');
+    expect(writeSdpCsv([row])).toBe('phone,walletAddress,walletAddressMemo,id,amount,paymentID\n+999700000001,GABC,,r1,1.5,batch-r1\n');
   });
 
   it('is byte stable and LF only, with a trailing newline and no BOM', () => {

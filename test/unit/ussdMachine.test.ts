@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryAccountStore, InMemoryPinStore, InMemorySessionStore, verifyPin, type GatewayStep } from 'stellar-ussd-sep10-adapter';
 import { AccountNotOnChainError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
 
-const MSISDN = '+254738035311';
+const MSISDN = '+999738035311';
 const ACCOUNT = 'G'.padEnd(56, 'Q');
 const PIN = '4729';
 const OTHER_PIN = '8351';

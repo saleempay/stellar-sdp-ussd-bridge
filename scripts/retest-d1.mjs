@@ -60,7 +60,7 @@ const tx = new TransactionBuilder(acct, { fee: BASE_FEE, networkPassphrase: Netw
 tx.sign(receiverKp);
 const trust = await horizon.submitTransaction(tx);
 log('receiver account', { account: receiverKp.publicKey(), fundingTx: funding.hash, trustlineTx: trust.hash, trustlineLedger: trust.ledger });
-const phone = `+2547${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
+const phone = `+9997${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
 
 // 2. two distribution accounts in the bridge tenant
 let accounts = await bridge.listDistributionWallets();
