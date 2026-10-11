@@ -16,6 +16,14 @@
  * The pending record is the same store Deliverable 2 writes
  * (pending-creations.json in DATA_DIR), so the command line and the USSD
  * service reconcile each other's ambiguous creations.
+ *
+ * Caps: every creation locks about 1.5 XLM of sponsor reserve that the
+ * reference signer can never reclaim, and on the sandbox anyone who knows
+ * the service code can dial. So creation answers E3 (CreationCappedError)
+ * when the sponsor's spendable XLM is below a configured minimum, or when
+ * the configured number of creations in the last hour has been reached.
+ * Adopting an account that already landed is not a creation and is never
+ * capped.
  */
 import {
   createSponsoredAccount,
@@ -25,8 +33,20 @@ import {
   type HorizonLike,
   type Signer,
 } from 'stellar-ussd-sep10-adapter';
+import { spendableXlm, type HorizonAccountRecord } from '../provision/horizon.js';
 import type { PendingCreationStore } from '../provision/pending.js';
 import { isNonDefinitiveSubmission } from '../provision/provision.js';
+import { CreationCappedError } from './errors.js';
+
+export interface CreationCaps {
+  /** Creation is refused while the sponsor can spend less XLM than this. */
+  minSponsorXlm: number;
+  /** Creation is refused once this many accounts were created in the last hour. */
+  maxPerHour: number;
+}
+
+export const DEFAULT_CREATION_CAPS: CreationCaps = { minSponsorXlm: 10, maxPerHour: 5 };
+const HOUR_MS = 60 * 60 * 1000;
 
 export interface CreateOnDialDeps {
   store: AccountStore;
@@ -37,6 +57,8 @@ export interface CreateOnDialDeps {
   asset: { code: string; issuer: string };
   /** Pending creations; strongly recommended, see pending.ts. */
   pendingStore?: PendingCreationStore;
+  /** Sponsor balance floor and hourly count; DEFAULT_CREATION_CAPS when omitted. */
+  caps?: CreationCaps;
   /** Event sink: event names only, never a number. */
   log?: (line: string) => void;
   now?: () => number;
@@ -82,6 +104,24 @@ async function probe(horizon: HorizonLike, accountId: string): Promise<Probe> {
 export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promise<CreatedOnDial> {
   const log = deps.log ?? (() => undefined);
   const now = deps.now ?? (() => Date.now());
+  const caps = deps.caps ?? DEFAULT_CREATION_CAPS;
+  /** Completion times of creations by this process, newest last. */
+  const creations: number[] = [];
+
+  const assertUnderCaps = async (): Promise<void> => {
+    const since = now() - HOUR_MS;
+    while (creations.length && creations[0]! < since) creations.shift();
+    if (creations.length >= caps.maxPerHour) {
+      throw new CreationCappedError('rate', `${creations.length} accounts were created in the last hour; the cap is ${caps.maxPerHour}`);
+    }
+    const sponsor = await deps.horizon.loadAccount(deps.sponsorPublicKey);
+    const spendable = typeof (sponsor as HorizonAccountRecord).subentryCount === 'number'
+      ? spendableXlm(sponsor as HorizonAccountRecord)
+      : Number(sponsor.balances.find((b) => b.asset_type === 'native')?.balance ?? 0);
+    if (spendable < caps.minSponsorXlm) {
+      throw new CreationCappedError('sponsor_balance', `the sponsor can spend ${spendable.toFixed(7)} XLM; creation needs at least ${caps.minSponsorXlm} XLM`);
+    }
+  };
 
   const create = async (raw: string): Promise<CreatedOnDial> => {
     const msisdn = normalizeMsisdn(raw);
@@ -106,6 +146,7 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
       await deps.pendingStore?.delete(msisdn);
     }
 
+    await assertUnderCaps();
     const newAccountId = await deps.signer.createAccountKey();
     await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date(now()).toISOString() });
     try {
@@ -119,6 +160,7 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
       });
       await deps.store.put(msisdn, newAccountId);
       await deps.pendingStore?.delete(msisdn);
+      creations.push(now());
       return { accountId: newAccountId, creationTxHash: result.hash, created: true };
     } catch (err) {
       if (isNonDefinitiveSubmission(err)) {
@@ -126,6 +168,7 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
         if (p === 'exists') {
           await deps.store.put(msisdn, newAccountId);
           await deps.pendingStore?.delete(msisdn);
+          creations.push(now());
           log('creation event=landedAfterAmbiguousSubmission');
           return { accountId: newAccountId, created: true };
         }

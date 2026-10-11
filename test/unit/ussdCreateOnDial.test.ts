@@ -2,19 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryAccountStore } from 'stellar-ussd-sep10-adapter';
 import { InMemoryPendingStore } from '../../src/provision/pending.js';
 import { createOnDial, withInFlightGuard } from '../../src/ussd/createOnDial.js';
+import { CreationCappedError } from '../../src/ussd/errors.js';
 import { FakeHorizon, FakeSigner, NETWORK, SPONSOR, USDC, timeout } from './provisionFakes.js';
 
 const MSISDN = '+999738035311';
 
-function setup() {
+function setup(opts: { sponsorXlm?: string; caps?: { minSponsorXlm: number; maxPerHour: number } } = {}) {
   const horizon = new FakeHorizon();
-  horizon.addAccount(SPONSOR, { xlm: '100.0000000' });
+  horizon.addAccount(SPONSOR, { xlm: opts.sponsorXlm ?? '100.0000000' });
   const signer = new FakeSigner();
   const store = new InMemoryAccountStore();
   const pendingStore = new InMemoryPendingStore();
   const logs: string[] = [];
-  const create = createOnDial({ store, signer, horizon, networkPassphrase: NETWORK, sponsorPublicKey: SPONSOR, asset: USDC, pendingStore, log: (l) => logs.push(l) });
-  return { horizon, signer, store, pendingStore, logs, create };
+  let clock = Date.parse('2026-10-11T08:00:00Z');
+  const create = createOnDial({ store, signer, horizon, networkPassphrase: NETWORK, sponsorPublicKey: SPONSOR, asset: USDC, pendingStore, log: (l) => logs.push(l), now: () => clock, ...(opts.caps ? { caps: opts.caps } : {}) });
+  return { horizon, signer, store, pendingStore, logs, create, advance: (ms: number) => { clock += ms; } };
 }
 
 describe('withInFlightGuard', () => {
@@ -98,5 +100,41 @@ describe('createOnDial', () => {
     await expect(f.create(MSISDN)).rejects.toThrow(/tx_failed/);
     expect(await f.pendingStore.get(MSISDN)).toBeUndefined();
     expect(await f.store.get(MSISDN)).toBeUndefined();
+  });
+});
+
+describe('createOnDial caps', () => {
+  it('refuses creation with E3 (CreationCappedError, sponsor_balance) when the sponsor can spend less than the floor', async () => {
+    const f = setup({ sponsorXlm: '5.0000000', caps: { minSponsorXlm: 10, maxPerHour: 5 } });
+    const err = await f.create(MSISDN).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CreationCappedError);
+    expect((err as CreationCappedError).reason).toBe('sponsor_balance');
+    expect(f.horizon.submissions).toHaveLength(0);
+    expect(await f.pendingStore.get(MSISDN)).toBeUndefined();
+  });
+
+  it('refuses the creation after the hourly cap and allows it again an hour later', async () => {
+    const f = setup({ caps: { minSponsorXlm: 1, maxPerHour: 2 } });
+    await f.create('+999738035311');
+    await f.create('+999738035322');
+    const err = await f.create('+999738035333').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CreationCappedError);
+    expect((err as CreationCappedError).reason).toBe('rate');
+    expect(f.horizon.submissions).toHaveLength(2);
+    f.advance(60 * 60 * 1000 + 1);
+    expect((await f.create('+999738035333')).created).toBe(true);
+  });
+
+  it('a mapped number is never capped, and neither is adopting an account that already landed', async () => {
+    const f = setup({ sponsorXlm: '0.0000000', caps: { minSponsorXlm: 10, maxPerHour: 0 } });
+    await f.store.put(MSISDN, 'G'.padEnd(56, 'M'));
+    expect((await f.create(MSISDN)).created).toBe(false);
+    const other = '+999738035399';
+    f.horizon.addAccount('G'.padEnd(56, 'P'), { xlm: '0', trustlines: [USDC], sponsored: 3 });
+    await f.pendingStore.put(other, { accountId: 'G'.padEnd(56, 'P'), at: '2026-10-11T07:00:00Z' });
+    const r = await f.create(other);
+    expect(r.created).toBe(true);
+    expect(r.accountId).toBe('G'.padEnd(56, 'P'));
+    expect(f.horizon.submissions).toHaveLength(0);
   });
 });

@@ -251,7 +251,8 @@ and the real answer is served from its cache to the gateway's retry. The
 sandbox ends a session after roughly 30 to 60 seconds without input
 (measured in the adapter's evidence, not quoted from documentation). PIN
 screens are local; the account screen is two reads under 2.5 seconds;
-creation on dial is one Horizon submission (about 5 seconds measured).
+creation on dial is one Horizon submission (about 5 seconds measured),
+preceded by one read of the sponsor's balance for the cap.
 
 ### Callback security
 

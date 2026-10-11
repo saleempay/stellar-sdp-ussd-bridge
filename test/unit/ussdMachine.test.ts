@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryAccountStore, InMemoryPinStore, InMemorySessionStore, verifyPin, type GatewayStep } from 'stellar-ussd-sep10-adapter';
-import { AccountNotOnChainError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, withInFlightGuard, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
+import { AccountNotOnChainError, CreationCappedError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, withInFlightGuard, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
 
 const MSISDN = '+999738035311';
 const ACCOUNT = 'G'.padEnd(56, 'Q');
@@ -175,6 +175,17 @@ describe('entry state: no account, no PIN (first use)', () => {
     expect(e3.text).toBe('No account found for this number.\nDial again to set up.');
     expect(e3.kind).toBe('end');
     expect(await f.pins.get(MSISDN)).toBeUndefined();
+  });
+
+  it('a capped creation shows E3, not E4, and logs the reason', async () => {
+    const f = setup();
+    f.deps.createAccount = async () => { throw new CreationCappedError('rate', 'cap'); };
+    const s = f.dial();
+    await s(); await s('1'); await s(PIN); await s(PIN);
+    const e3 = await s('1');
+    expect(e3.text).toBe('No account found for this number.\nDial again to set up.');
+    expect(e3.kind).toBe('end');
+    expect(f.logs.some((l) => l.includes('event=creationCapped reason=rate'))).toBe(true);
   });
 
   it('creation failure shows E4', async () => {
