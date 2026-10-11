@@ -173,7 +173,8 @@ exists and names the `--reset` step in its message.
   passphrases would not decrypt the tenant keys stored in that volume.
 - Port 8000, 8003 or 3000 already in use: stop the other process or change
   `PORT`, `ADMIN_PORT` and the frontend port mapping in
-  `sdp/docker-compose.yml`.
+  `sdp/docker-compose.yml`. All three are published on 127.0.0.1 only;
+  the stack is not reachable from other machines on the network.
 - After a testnet reset (announced on the Stellar Dashboard) every account
   is gone: `--reset`, `sdp:accounts -- --force`, `sdp:up`.
 
