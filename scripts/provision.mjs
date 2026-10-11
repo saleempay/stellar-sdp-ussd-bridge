@@ -2,7 +2,7 @@
 /**
  * Provision recipients for an SDP wallet-address disbursement.
  *
- *   npm run provision -- --input recipients.csv --output sdp-disbursement.csv [--data data] [--allow-pin-column]
+ *   npm run provision -- --input recipients.csv --output sdp-disbursement.csv [--data data] [--allow-pin-column] [--allow-partial]
  *
  * Input: phone,id,amount (plus an optional pin column, refused without
  * --allow-pin-column; testnet automation only, recipients set their PIN on
@@ -16,8 +16,13 @@
  * (a failed or uncertain row); 2 on a configuration or input file error
  * (nothing sent). An uncertain row names an account whose creation may have
  * landed; data/pending-creations.json keeps it for the next run to check.
+ *
+ * When any row failed or is uncertain the output file is NOT written: a
+ * file missing rows looks complete to the SDP. Pass --allow-partial to
+ * write the rows that succeeded together with <output>.partial.json, the
+ * sidecar sdp:upload checks (it refuses the file unless --accept-partial).
  */
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parseEnv } from 'node:util';
 import { JsonFileAccountStore, JsonFilePinStore, LocalKeypairSigner } from 'stellar-ussd-sep10-adapter';
@@ -32,6 +37,8 @@ import {
   formatProvisionReport,
   maskAccount,
   parseInputCsv,
+  partialSidecarFor,
+  partialSidecarPath,
   provisionRecipients,
   sha256Hex,
   writeSdpCsv,
@@ -43,8 +50,9 @@ const input = opt('--input');
 const output = opt('--output');
 const dataDir = opt('--data') ?? 'data';
 const allowPinColumn = args.includes('--allow-pin-column');
+const allowPartial = args.includes('--allow-partial');
 if (!input || !output) {
-  console.error('usage: npm run provision -- --input <recipients.csv> --output <sdp-disbursement.csv> [--data <dir>] [--allow-pin-column]');
+  console.error('usage: npm run provision -- --input <recipients.csv> --output <sdp-disbursement.csv> [--data <dir>] [--allow-pin-column] [--allow-partial]');
   process.exit(2);
 }
 
@@ -92,10 +100,25 @@ try {
   process.exit(2);
 }
 console.log(formatProvisionReport(report));
+const omitted = report.counts.failed + report.counts.uncertain;
 const csv = writeSdpCsv(report.sdpRows);
-writeFileSync(output, csv);
 const hash = sha256Hex(csv);
-console.log(`wrote ${output}: ${report.sdpRows.length} rows, sha256 ${hash}`);
-appendFileSync(join(dataDir, 'provision-log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), input: basename(input), output, sha256: hash, counts: report.counts, outcomes: report.outcomes.map(({ accountId: _a, ...o }) => o) })}\n`);
+let written = false;
+if (omitted > 0 && !allowPartial) {
+  console.error(`${output} NOT written: ${omitted} row(s) failed or uncertain and the file would look complete without them. Fix and re-run, or pass --allow-partial to write the ${report.sdpRows.length} row(s) that succeeded with a sidecar that sdp:upload checks.`);
+} else {
+  writeFileSync(output, csv);
+  written = true;
+  const sidecar = partialSidecarFor(report, output, hash);
+  if (sidecar) {
+    writeFileSync(partialSidecarPath(output), `${JSON.stringify(sidecar, null, 2)}\n`);
+    console.log(`wrote ${output}: ${report.sdpRows.length} rows, sha256 ${hash}; PARTIAL, ${omitted} row(s) omitted (input rows ${sidecar.omitted.map((o) => o.rowIndex).join(', ')}); sidecar ${partialSidecarPath(output)}`);
+  } else {
+    // a complete file must not carry a sidecar from an earlier partial run
+    rmSync(partialSidecarPath(output), { force: true });
+    console.log(`wrote ${output}: ${report.sdpRows.length} rows, sha256 ${hash}`);
+  }
+}
+appendFileSync(join(dataDir, 'provision-log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), input: basename(input), output, written, sha256: hash, counts: report.counts, outcomes: report.outcomes.map(({ accountId: _a, ...o }) => o) })}\n`);
 const ok = report.counts.failed === 0 && report.counts.uncertain === 0 && report.counts.pinRefused === 0;
 process.exit(ok ? 0 : 1);

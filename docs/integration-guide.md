@@ -82,6 +82,14 @@ one by one with a code (`invalid_phone`, `resolver_failure`,
 testnet account in `.env`; the run is refused up front when it cannot pay
 for every row.
 
+When any row failed or is uncertain, the SDP file is not written, because
+a file missing rows looks complete to the SDP. Fix and re-run (the
+successful rows are `unchanged` and cost nothing), or pass
+`--allow-partial` to write the rows that succeeded together with a
+sidecar, `<output>.partial.json`, naming the omitted input rows and their
+codes. `sdp:upload` reads that sidecar and refuses the file unless you
+pass `--accept-partial`.
+
 A creation whose submission gets no verdict from the network (a timeout,
 a Horizon 5xx, or no result codes) may still have landed. The command
 writes `data/pending-creations.json` (number, account) before each
