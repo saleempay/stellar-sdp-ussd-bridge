@@ -667,3 +667,89 @@ and `handle` exclusive on the listener's options, so the bridge's server
 wiring now passes `handle` alone (`src/ussd/server.ts`); nothing else
 changed. After the rebuild, the bridge's suite: 121 passed, 2 skipped,
 typecheck clean.
+
+## 2026-10-11: correction to the 7 and 10 October entries on the failed sandbox dials
+
+This entry corrects three earlier entries, which stay as written:
+
+- "2026-10-07: Deliverable 3, USSD receive and balance view", subsection
+  "Session set 4: recipient r5, recorded on video (13:25 UTC)", the
+  paragraph beginning "The returning path and the About screen were not
+  captured on video";
+- "2026-10-07: Deliverable 4, part 3: USSD sessions after the batch,
+  OUTSTANDING";
+- "2026-10-10: Deliverable 4, part 3, second attempt: sandbox still
+  failing, OUTSTANDING".
+
+Withdrawn: the statements that "the callback was never contacted", that
+the gateway "never contacted" the callback, and that two channels failing
+the same way "places the fault on the account or gateway side". The
+support request to Africa's Talking was made on that reading and the
+notice draft's request 3 (sandbox fault) has been removed.
+
+What the gateway dashboard shows (Session Details, read by Ramy Soliman on
+11 October 2026; times UTC). Every failed session carries an error message
+naming its cause:
+
+| When | Sessions | Error message |
+|---|---|---|
+| 7 Oct 12:30 to 12:37 | 3 | 405 Method Not Allowed from the callback |
+| 7 Oct 13:01 to 13:06 | 4 | UnknownHostException for the tunnel hostname started at 11:14, after the capture server had restarted at 12:50 on a new hostname |
+| 7 Oct 13:14 | 1 | response code 530 |
+| 7 Oct 13:23 | 1 | UnknownHostException for the 12:50 hostname, one minute before that hostname served the recorded sessions at 13:24 to 13:26 |
+| 7 Oct 13:27 to 13:28, and 14:16 | 4 and 2 | 502 Bad Gateway: the gateway reached a tunnel edge and no server was behind it |
+| 10 Oct 11:23, main channel | 1 | UnknownHostException for the hostname started on 7 October at 14:02; the callback saved on 10 October never took effect on this channel |
+| 10 Oct 11:28, second channel | 1 | UnknownHostException for a hostname that appears in no capture record |
+
+Cause: a cloudflared quick tunnel gets a new hostname on every start ("The
+hostname changes each time you create a Quick Tunnel", Cloudflare
+TryCloudflare documentation, read 11 October 2026). The capture server and
+its tunnel were restarted during 7 October (11:14, 12:50, 14:02) and again
+on 10 October, and the callback saved in the dashboard kept an earlier
+hostname. The pre-dial check compared the last four characters of the
+path, which matched, and never the host. There was no gateway fault.
+
+What the capture records do and do not show. The records hold two 404
+responses within half a second at each failed dial time (7 October
+12:38:05, 14:16:48; 10 October 11:23:27). The recorder of that time kept
+no method, path, header or source for them, so they could not be told
+from gateway requests; finding 2 of the Deliverable 3 entry had already
+recorded that saving the callback in the dashboard fires two GET requests
+200 ms apart, answered 404 by the POST-only listener. The bridge's
+listener answers 404, never 405, to a non-POST method or a path that is
+not the callback path; the origin of the 405 named for 12:30 to 12:37 is
+not established by our records.
+
+Fix in the tooling (branch `d4-batch-evidence`, 11 October):
+
+- the recorder keeps, for every request and every status, the method, the
+  path as segment lengths (never the text), whether the path equals the
+  callback path, query presence, content type and length, bytes read,
+  user agent and the tunnel's forwarding headers;
+- the capture script starts and owns the tunnel for the whole session,
+  writes every tunnel start to the record with its time and hostname,
+  prints the hostname in full on start and again on any restart with the
+  line that the dashboard callback must be updated, and prints "READY TO
+  DIAL" only when the hostname resolves on two public resolvers (1.1.1.1
+  and 8.8.8.8) and a well-formed gateway POST through the public URL
+  returns screen 1;
+- a fixed hostname is supported through `USSD_TUNNEL_MODE=named` (a
+  Cloudflare named tunnel) or `external` (another provider), documented in
+  `docs/integration-guide.md`, section 3; the sandbox sessions continue on
+  a quick tunnel with the hostname confirmed in the dashboard before each
+  dial.
+
+Also established on 11 October, 06:57 UTC, through a quick tunnel in front
+of the server (record `2026-10-11T06-57-13-752Z.json`, local): the tunnel
+does not redirect http to https (an http POST arrived as a POST with its
+body and `x-forwarded-proto: http` and was answered with screen 1); a
+trailing slash, a GET, a HEAD and a POST on `/` are answered 404 "not
+found"; an empty-body POST on the callback path is answered 400 "bad
+request". Every one of those bodies is one the gateway treats as invalid,
+since none starts with CON or END.
+
+`docs/period-report-2026-10-draft.md` (finding 4 and the clips paragraph)
+and `docs/instaward-evidence-package.md` (row 4.3) are corrected in the
+same commit. `README.md`, `docs/walkthrough-deviations.md` and
+`docs/demo-video-plan.md` carry no sentence attributing the failures to
+the gateway and are unchanged.

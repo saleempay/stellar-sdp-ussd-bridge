@@ -69,9 +69,10 @@ described below.
 on the sandbox simulator
 (`docs/evidence/d3-ussd-provisioned-path-r5-2026-10-07.mp4`, 7 October).
 The five clips showing each recipient's paid balance after the batch have
-not yet been recorded; the sandbox gateway failed for the rest of 7
-October (finding 4) and the session is the first item when the gateway
-test dial passes.
+not yet been recorded; the dials after 13:27 UTC on 7 October and the
+dials on 10 October failed because the gateway dashboard held the
+hostname of an earlier tunnel (finding 4), and the session is the first
+item once the saved hostname is confirmed and a test dial passes.
 
 ## The batch, in one paragraph
 
@@ -112,12 +113,23 @@ balance on the ledger now equals the amount in the file.
    request approved and merged on 7 October (see "Review and merge
    state" for the merge message and the note in #17). The bridge pins the
    adapter to the merge commit.
-4. **Sandbox gateway on 7 October.** The Africa's Talking sandbox served
-   the bridge from 12:40 to 13:26 UTC and then failed every dial within a
-   second, without contacting the callback, for the rest of the day (the
-   gateway's Sessions log shows 1 hop and 1 second per failure). The
-   recorded sessions showing each recipient's paid balance are therefore
-   outstanding.
+4. **Stale tunnel hostname in the gateway dashboard, 7 and 10 October.**
+   The Africa's Talking sandbox served the bridge from 12:40 to 13:26 UTC
+   on 7 October. Every later dial that day and both dials on 10 October
+   failed within a second. The dashboard's Session Details, read on 11
+   October, name the cause of each: 405 Method Not Allowed from the
+   callback (12:30 to 12:37), UnknownHostException for the hostname of a
+   tunnel started earlier (13:01 to 13:06, 13:23, and both channels on 10
+   October), 530 (13:14), and 502 Bad Gateway from a tunnel with no server
+   behind it (13:27 to 13:28 and 14:16). A quick tunnel gets a new
+   hostname on every start and the saved callback kept an old one; the
+   check before each dial compared the last four characters of the path
+   and never the host. There was no gateway fault. The capture script now
+   starts the tunnel itself, writes every tunnel start to the record,
+   prints the hostname in full, and prints "ready to dial" only after the
+   hostname resolves on two public resolvers and a live probe returns
+   screen 1 (`EVIDENCE.md`, 11 October correction). The recorded sessions
+   showing each recipient's paid balance are therefore outstanding.
 
 ## What remains
 
