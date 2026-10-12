@@ -149,9 +149,15 @@ docker compose --env-file sdp/.env -f sdp/docker-compose.yml logs -f sdp-api
 docker compose --env-file sdp/.env -f sdp/docker-compose.yml ps
 ```
 
+With `EMAIL_SENDER_TYPE=DRY_RUN` the `sdp-api` log holds every password
+reset link the SDP has issued, so while a link is live that log is as
+sensitive as `sdp/.env`: do not paste it anywhere.
+
 To start again from nothing: `--reset`, then `npm run sdp:accounts --
 --force` (new accounts; the old ones stay funded on testnet and are
-abandoned), then `npm run sdp:up`.
+abandoned), then `npm run sdp:up`. `sdp:accounts -- --force` refuses to
+run while the volume `${COMPOSE_PROJECT_NAME}_postgres-db-testnet` still
+exists and names the `--reset` step in its message.
 
 ## 6. Troubleshooting
 
@@ -164,10 +170,15 @@ abandoned), then `npm run sdp:up`.
 - `POST /tenants` returns 500: the host distribution account in `sdp/.env`
   must hold XLM to fund the tenant's account (`TENANT_XLM_BOOTSTRAP_AMOUNT`,
   5 XLM by default). Friendbot gives 10,000 XLM, so this only happens after
-  a testnet reset: run `npm run sdp:accounts -- --force`.
+  a testnet reset: `npm run sdp:down -- --reset`, then
+  `npm run sdp:accounts -- --force`, then `npm run sdp:up`, the same
+  sequence as the testnet reset item below. `--force` on its own is
+  refused while the Postgres volume exists, because the new encryption
+  passphrases would not decrypt the tenant keys stored in that volume.
 - Port 8000, 8003 or 3000 already in use: stop the other process or change
   `PORT`, `ADMIN_PORT` and the frontend port mapping in
-  `sdp/docker-compose.yml`.
+  `sdp/docker-compose.yml`. All three are published on 127.0.0.1 only;
+  the stack is not reachable from other machines on the network.
 - After a testnet reset (announced on the Stellar Dashboard) every account
   is gone: `--reset`, `sdp:accounts -- --force`, `sdp:up`.
 

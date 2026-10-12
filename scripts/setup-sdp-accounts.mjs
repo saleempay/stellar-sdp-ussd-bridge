@@ -5,11 +5,17 @@
  * from sdp/.env.example. It prints masked public addresses and the
  * Friendbot transaction hash. It never prints a secret.
  *
- * Refuses to overwrite an existing sdp/.env unless --force is given.
+ * Refuses to overwrite an existing sdp/.env unless --force is given, and
+ * refuses --force while the stack's Postgres volume still exists: the two
+ * encryption passphrases in sdp/.env decrypt the tenant distribution keys
+ * stored in that volume (helmchart/sdp/README.md:277,356 at SDP 7.0.0), so
+ * new passphrases over an old volume leave every tenant unable to sign.
+ * Run `npm run sdp:down -- --reset` first.
  *
  * Usage: npm run sdp:accounts [-- --force]
  */
 import { Keypair } from '@stellar/stellar-sdk';
+import { spawnSync } from 'node:child_process';
 import { randomBytes, randomInt, generateKeyPairSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -21,6 +27,39 @@ const force = process.argv.includes('--force');
 if (existsSync(ENV_PATH) && !force) {
   console.error(`${ENV_PATH} already exists. Re-run with --force to replace it (the old accounts are abandoned).`);
   process.exit(2);
+}
+
+/**
+ * The Compose volume name, as sdp/docker-compose.yml builds it:
+ * ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-testnet. The project name
+ * is read from the existing sdp/.env, then the environment, then the default.
+ */
+function postgresVolumeName() {
+  let fromEnvFile;
+  if (existsSync(ENV_PATH)) {
+    const m = /^COMPOSE_PROJECT_NAME=(.*)$/m.exec(readFileSync(ENV_PATH, 'utf8'));
+    if (m) fromEnvFile = m[1].trim().replace(/^["']|["']$/g, '');
+  }
+  const project = fromEnvFile || process.env.COMPOSE_PROJECT_NAME || 'sdp-bridge';
+  return `${project}_postgres-db-testnet`;
+}
+
+if (force) {
+  const volume = postgresVolumeName();
+  // The guard allows --force only when the volume is positively absent.
+  // Exit 0 means it exists. A stopped daemon or a missing binary also exits
+  // non-zero, so only Docker's own "no such volume" answer counts as absent;
+  // anything else refuses, because the volume may well still be on disk.
+  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { encoding: 'utf8' });
+  if (inspect.status === 0) {
+    console.error(`--force refused: the Docker volume ${volume} still exists. Its tenant distribution keys are encrypted under the passphrases in the current ${ENV_PATH}; new passphrases would leave every tenant unable to sign. Run \`npm run sdp:down -- --reset\` first, then re-run with --force.`);
+    process.exit(2);
+  }
+  const stderr = `${inspect.stderr ?? ''}`;
+  if (inspect.error || !/no such volume/i.test(stderr)) {
+    console.error(`--force refused: Docker did not confirm that the volume ${volume} is absent (${inspect.error ? inspect.error.code : stderr.trim().split('\n')[0] || `exit ${inspect.status}`}). Start Docker first, then re-run; the guard allows --force only when Docker answers "no such volume".`);
+    process.exit(2);
+  }
 }
 
 const mask = (a) => `${a.slice(0, 4)}...${a.slice(-4)}`;
@@ -49,15 +88,6 @@ const channelEnc = Keypair.random();
 const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const ecPem = ec.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString().trim().replace(/\n/g, '\\n');
 
-console.log('Generated keypairs. Requesting Friendbot funding for the host distribution account...');
-const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(distribution.publicKey())}`);
-if (!res.ok) {
-  console.error(`Friendbot funding failed: HTTP ${res.status}`);
-  console.error((await res.text()).slice(0, 500));
-  process.exit(1);
-}
-const funding = await res.json();
-
 const values = {
   DISTRIBUTION_PUBLIC_KEY: distribution.publicKey(),
   DISTRIBUTION_SEED: distribution.secret(),
@@ -72,7 +102,20 @@ const values = {
   SCOPETEST_OWNER_PASSWORD: password(),
 };
 
-const template = readFileSync(TEMPLATE_PATH, 'utf8');
+// The template is validated before Friendbot is asked for anything: a
+// broken template must not cost a funded account.
+let template;
+try {
+  template = readFileSync(TEMPLATE_PATH, 'utf8');
+} catch {
+  console.error(`template ${TEMPLATE_PATH} not found`);
+  process.exit(1);
+}
+const unfilled = Object.keys(values).filter((k) => !new RegExp(`^${k}=`, 'm').test(template));
+if (unfilled.length) {
+  console.error(`template ${TEMPLATE_PATH} lacks keys: ${unfilled.join(', ')}`);
+  process.exit(1);
+}
 const filled = template
   .split('\n')
   .map((line) => {
@@ -81,11 +124,16 @@ const filled = template
     return `${m[1]}=${values[m[1]]}`;
   })
   .join('\n');
-const unfilled = Object.keys(values).filter((k) => !new RegExp(`^${k}=`, 'm').test(template));
-if (unfilled.length) {
-  console.error(`template ${TEMPLATE_PATH} lacks keys: ${unfilled.join(', ')}`);
+
+console.log('Generated keypairs. Requesting Friendbot funding for the host distribution account...');
+const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(distribution.publicKey())}`);
+if (!res.ok) {
+  console.error(`Friendbot funding failed: HTTP ${res.status}`);
+  console.error((await res.text()).slice(0, 500));
   process.exit(1);
 }
+const funding = await res.json();
+
 writeFileSync(ENV_PATH, `${filled.trimEnd()}\n`, { mode: 0o600 });
 chmodSync(ENV_PATH, 0o600);
 

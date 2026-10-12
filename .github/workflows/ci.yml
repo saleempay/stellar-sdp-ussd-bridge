@@ -16,14 +16,19 @@ jobs:
     name: install, typecheck, offline tests, secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      # actions pinned to a commit SHA, the same standard as the compose
+      # file's image digests; the comment names the tag the SHA was read from
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # the adapter is consumed as a git submodule at a pinned commit
           submodules: true
+          # full history so the secret scan can read the lines each commit
+          # of the pull request adds, not only the final tree
+          fetch-depth: 0
 
       # 22 is the minimum this package declares in engines. Testing the
       # floor rather than the newest release is deliberate.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -38,4 +43,6 @@ jobs:
       - run: npm test
 
       - name: secret scan
+        # GITHUB_BASE_REF names the pull request base; the script scans the
+        # lines added by origin/<base>..HEAD as well as the tree
         run: sh scripts/secret-scan.sh

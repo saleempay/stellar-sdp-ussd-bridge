@@ -30,21 +30,54 @@ For each phone number in the operator's input:
 2. looks the number up in its account store; when nothing is mapped, asks
    the signer for a new key, creates the account on testnet with the
    sponsor paying the reserves, and opens the USDC trustline in the same
-   transaction; when an account is mapped but has no trustline, adds one;
+   transaction; when an account is mapped but has no trustline, adds one
+   only if the signer can sign for that account (with the reference
+   signer it cannot, and the row reports `signer_unavailable`);
 3. records the mapping phone number to account in the account store;
 4. writes the SDP row with that address.
 
 That is the whole binding: a phone number, an account the bridge created,
 and a line in a file. The bridge does not know who holds the phone.
 
+## Receive-only with the reference signer
+
+Accounts provisioned by this bridge are receive-only while the reference
+signer is in use. The reference `LocalKeypairSigner` generates each
+recipient key in process memory and forgets it when the command exits;
+nothing in this repository exports, persists or recovers those keys, and
+no other signer ships here. The consequences, stated plainly:
+
+- **Receiving works.** The SDP pays the account's USDC trustline, and the
+  USSD service (Deliverable 3) reads the balance and the last payment from
+  Horizon. Neither needs a signature from the account.
+- **Nothing can be signed for the account afterwards.** SEP-10
+  authentication, any outbound payment, a later trustline, or a merge of
+  the account all need the account's key, which no later process holds.
+- **The trustline repair path is unavailable.** When a mapped account has
+  no USDC trustline, the command reports `signer_unavailable` for that row
+  and submits nothing. It does not fail as a network error. (This path
+  only works when a `Signer` that holds the account key is supplied.)
+- **Sponsor reserves stay locked.** Each provisioned account holds about
+  1.5 XLM of the sponsor's reserve (two base reserves and one trustline
+  subentry); with no key the account cannot be merged and the
+  sponsorship cannot be transferred back. The sponsor preflight budgets
+  for creation only, not for reclaiming.
+
+A deployment that needs any of the above supplies a `Signer` whose keys
+live in its own protected boundary (see "What an adopter must add"), and
+carries that decision into Deliverables 3 and 4: the USSD menu and the
+batch in this repository are designed around receive-only accounts.
+
 ## PINs
 
 The bridge does not set a PIN by default. The recipient sets their PIN on
-their first USSD dial (Deliverable 3), and the PIN is their consent to
-sign from then on. The `pin` column in the input file exists only so the
-automated testnet run can exercise the PIN store; the command line refuses
-it unless `--allow-pin-column` is passed, and a file carrying PINs must
-never be used outside testnet. When a PIN record already exists for a
+their first USSD dial (Deliverable 3). The PIN gates the account screen
+today; it becomes the recipient's consent to sign only once a deployment
+supplies a signer that holds the account key, which the reference signer
+does not (see above). The `pin` column in the input file exists only so
+the automated testnet run can exercise the PIN store; the command line
+refuses it unless `--allow-pin-column` is passed, and a file carrying PINs
+must never be used outside testnet. When a PIN record already exists for a
 number, nothing in this bridge replaces it.
 
 What is stored: the adapter's PIN store holds a salted scrypt hash
@@ -60,8 +93,10 @@ What is stored: the adapter's PIN store holds a salted scrypt hash
   record, not in this bridge.
 - **The signer.** The reference signer holds recipient keys in process
   memory and forgets them when the process ends; it exists so a third
-  party can run the flow on testnet. A deployment supplies a `Signer`
-  whose keys live in its own protected boundary.
+  party can run the flow on testnet, and it makes every account it
+  creates receive-only (see above). A deployment supplies a `Signer`
+  whose keys live in its own protected boundary before any flow that
+  signs for a recipient account.
 - **The stores.** The account store links phone numbers to accounts and
   the PIN store gates signing. Both are personal data and authentication
   data; protect and back them up as such. The reference stores are JSON
