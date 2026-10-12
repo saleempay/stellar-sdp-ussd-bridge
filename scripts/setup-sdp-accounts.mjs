@@ -46,10 +46,18 @@ function postgresVolumeName() {
 
 if (force) {
   const volume = postgresVolumeName();
-  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { stdio: 'ignore' });
-  // ENOENT (no docker binary) means no stack can be running on this machine.
+  // The guard allows --force only when the volume is positively absent.
+  // Exit 0 means it exists. A stopped daemon or a missing binary also exits
+  // non-zero, so only Docker's own "no such volume" answer counts as absent;
+  // anything else refuses, because the volume may well still be on disk.
+  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { encoding: 'utf8' });
   if (inspect.status === 0) {
     console.error(`--force refused: the Docker volume ${volume} still exists. Its tenant distribution keys are encrypted under the passphrases in the current ${ENV_PATH}; new passphrases would leave every tenant unable to sign. Run \`npm run sdp:down -- --reset\` first, then re-run with --force.`);
+    process.exit(2);
+  }
+  const stderr = `${inspect.stderr ?? ''}`;
+  if (inspect.error || !/no such volume/i.test(stderr)) {
+    console.error(`--force refused: Docker did not confirm that the volume ${volume} is absent (${inspect.error ? inspect.error.code : stderr.trim().split('\n')[0] || `exit ${inspect.status}`}). Start Docker first, then re-run; the guard allows --force only when Docker answers "no such volume".`);
     process.exit(2);
   }
 }
