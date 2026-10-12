@@ -349,11 +349,11 @@ service answered every callback in under 2.5 seconds.
 
 ### Environment
 
-- Bridge branch `d3-ussd-balance-view`; adapter submodule pinned
-  **temporarily** to `6a0dd6182cbfa0aef31befb19dda5079d7b8b3f7`, the head
-  of adapter PR saleempay/stellar-ussd-sep10-adapter#15 ("Make the USSD
-  step handler injectable"), to be re-pinned to the merge commit on main
-  when it lands
+- Bridge branch `d3-ussd-balance-view`; adapter submodule pinned at the
+  time to `6a0dd6182cbfa0aef31befb19dda5079d7b8b3f7`, the head of adapter
+  PR saleempay/stellar-ussd-sep10-adapter#15 ("Make the USSD step handler
+  injectable"); re-pinned on 7 October to that PR's merge commit on main,
+  see "Deliverable 4, part 4" below
 - Gateway: Africa's Talking sandbox, shared code `*384#`, channel
   `*384*45210#` created in the dashboard for this run; the callback is a
   cloudflared quick tunnel to port 8085 plus the path from `.env`
@@ -457,6 +457,8 @@ parsed 13 screens from `docs/ussd-menu-walkthrough-v1.md` and matched each
 byte for byte; the budget test rendered 24 screens at their longest values,
 the longest being the account screen at 125 of 156 characters.
 
+Corrected on 11 October 2026, see the entry of that date.
+
 ### Session set 4: recipient r5, recorded on video (13:25 UTC)
 
 Ramy Soliman recorded the simulator with QuickTime while the session was
@@ -505,3 +507,386 @@ nothing else altered: dial, screen 1, `1`, screen 2, PIN, screen 3, PIN,
 the "USSD code running" wait, screen 7 for `GCKM..XAAX`. The cut was made
 with ffmpeg from the raw file and checked frame by frame; the screen times
 match the server log above (dial 13:25:52, account screen 13:26:05 UTC).
+
+## 2026-10-07: Deliverable 4, part 1: clean clone verification of the integration guide
+
+### What this section proves, in plain language
+
+The commands in `docs/integration-guide.md` and `docs/sdp-setup.md` were
+run from a fresh copy of this repository, cloned from GitHub into an
+empty directory, with the running tenant stopped first so nothing from
+the build session could help. From that copy, in 83 seconds end to end
+(13:48:30 to 13:49:53 UTC): the dependencies installed, the adapter
+built, the offline suite passed, new testnet accounts were created, the
+SDP 7.0.0 stack started with its own Compose project and two tenants were
+provisioned, a sponsor was created, two recipients were provisioned on
+chain, the disbursement file was uploaded and accepted. Then that stack
+was stopped and the original one restarted intact.
+
+### Run record (log at the time: `d4-clean-clone-verify.log`, local)
+
+- Clone: `git clone --recurse-submodules -b d4-batch-evidence ...`, HEAD `67d4afc`, submodule `6a0dd61`
+- `npm ci`: 96 packages; `npm run adapter:build`; `npm run typecheck`: clean; `npm test`: 121 passed, 2 skipped
+- `npm run sdp:accounts`: host distribution account `GBI7...3YCM`, Friendbot tx `947caad50f62ef445057b189228d02cd65ad16c663d542c7f235ec5cca99618e`
+- `sdp/.env`: `COMPOSE_PROJECT_NAME=sdp-verify` (own volume `sdp-verify_postgres-db-testnet`, same ports as the stopped main stack)
+- `npm run sdp:up` (13:48:47): tenant `bridge` created (id `14f5e2f7...`, distribution account `GB3L...KVGF`), tenant `scopetest` created (`a2fe289c...`, `GBVX...7LTR`), owner passwords set through the reset flow, invitations disabled, user managed wallet enabled, USDC present on both; `SDP up and provisioned`
+- `npm run sponsor:setup`: sponsor `GC6I...KNWA`, Friendbot tx `d971e6acc873598eedf609a9bc4741b02b7735adaf5f4e069872a382406bb4ce`
+- `npm run provision` over two rows: accounts `GDKU...MKA3` (tx `ee45a11ff034fbe1fe489451e02cc6e6ab938472ad5c1ad0f1c69d0d977e8cd7`, ledger 5071477) and `GBXF...SGQV` (tx `c6fa6886421f96e8f09444dda9b9b0a2b6dadc9d382fa88705f102b61b46a752`, ledger 5071478); file SHA-256 `78b0d4d24d47febafc851f49be0c9263f45de7054a0761091ebef4e3abf01533`
+- `npm run sdp:upload`: disbursement `63460fbf-0882-4bc5-bf8e-0c03f23b2a05` "clean clone verification", READY, two receiver wallets REGISTERED
+- `npm run sdp:down` on the verification stack; `npm run sdp:up` on the main stack: both original tenants `already`, `SDP up and provisioned` (13:49:53)
+
+The verification clone and its `.env` files were discarded afterwards;
+its testnet accounts stay funded and unused.
+
+## 2026-10-07: Deliverable 4, part 2: the batch
+
+### What this section proves, in plain language
+
+The tenant's distribution account received 20 USDC from Circle's testnet
+faucet. The disbursement uploaded in Deliverable 2, five recipients and
+12.50 USDC in total, was started through the SDP's API at 14:00:20 UTC and
+was complete at 14:01:06 UTC: five payments, every one successful, each a
+USDC payment on the Stellar test network from the distribution account to
+the recipient's account, confirmed by reading the transaction back from
+Horizon. Every recipient's balance on the ledger now equals the amount in
+the file. The dashboard shows the batch as completed with each recipient's
+status.
+
+### Funding (Circle testnet faucet, requested by Ramy Soliman)
+
+- Source: `https://faucet.circle.com`, Stellar Testnet, as named by
+  developers.stellar.org (the MPP charge guide and the x402 quickstart,
+  read 7 October 2026); drip 20 USDC per address per 2 hours as stated on
+  the faucet page.
+- Transaction `96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3`,
+  ledger 5071572, 13:57:27 UTC, successful, one `payment` of 20.0000000 USDC
+  (issuer `GBBD...FLA5`) from the faucet account
+  `GAYF33NNNMI2Z6VNRFXQ64D4E4SF77PM46NW3ZUZEEU5X7FCHAZCMHKU` to the
+  distribution account `GBTC...Y6XJ`:
+  https://stellar.expert/explorer/testnet/tx/96e36ba7c9cd0097579e49860476a099a2918e4999b828a232a57f16c207bcb3
+- `npm run sdp:batch -- --disbursement fa63ed05-98fa-4980-bd26-fe1a3bda11aa --check-only`:
+  balance 20.0000000 USDC, total 12.5000000 USDC, "balance covers the total".
+
+### The batch (`npm run sdp:batch`, run `2026-10-07T14-00-19-844Z`)
+
+Disbursement `fa63ed05-98fa-4980-bd26-fe1a3bda11aa` "D2 evidence 2026-10-07",
+started by `PATCH /disbursements/{id}/status {"status":"STARTED"}` on the
+default distribution account. Timeline (UTC): 14:00:20 STARTED, five READY;
+14:00:25 five PENDING; 14:00:36 two SUCCESS; 14:00:46 three; 14:00:56 four;
+14:01:06 COMPLETED, five SUCCESS. 46 seconds from start to completion.
+
+| Recipient | Amount | Status | Transaction | Ledger |
+|---|---|---|---|---|
+| r1 `GDMN...QUUU` | 1.5000000 USDC | SUCCESS | [94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd](https://stellar.expert/explorer/testnet/tx/94badd0d32b62ecf7127e1e7f7d71d8e49cd96d1fd8d1ec9fdae76b622b5c8fd) | 5071608 |
+| r2 `GA6R...ZCNA` | 2.0000000 USDC | SUCCESS | [17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94](https://stellar.expert/explorer/testnet/tx/17c76432e03663fa3efdf3ca21df611e7dba822df3fe880a37eeb9736c32ae94) | 5071609 |
+| r3 `GADZ...HMBZ` | 2.5000000 USDC | SUCCESS | [28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41](https://stellar.expert/explorer/testnet/tx/28e34da3d5759861fb9e8ceee6246bda921b6fac0f49fedef7c532c787826c41) | 5071610 |
+| r4 `GBFQ...FAVO` | 3.0000000 USDC | SUCCESS | [51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9](https://stellar.expert/explorer/testnet/tx/51c12ad4271c3bc3a9b5783380ce0cb7acd8eb99bcbc8a1d916e02b96fd0e2d9) | 5071612 |
+| r5 `GCKM...XAAX` | 3.5000000 USDC | SUCCESS | [34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa](https://stellar.expert/explorer/testnet/tx/34c5d845cf26e73b5f6fcf2e5d9c60569a2b5646a5d2b4a55c704f335baa5dfa) | 5071614 |
+
+Each transaction was read back from Horizon by the script: successful,
+one `payment` operation of that amount in USDC (issuer `GBBD...FLA5`) from
+`GBTC...Y6XJ` to the recipient. Full record, accounts masked:
+`docs/evidence/d4-batch-2026-10-07.json`.
+
+Balances read from Horizon after the run: r1 1.5000000, r2 2.0000000,
+r3 2.5000000, r4 3.0000000, r5 3.5000000 USDC; distribution account
+7.5000000 USDC (20 less 12.5) and 4.9998800 XLM (fees paid by the TSS
+channel account, not by the distribution account, except the two base
+fees of its own operations).
+
+Dashboard, captured by the evidence script at 18:02 local time:
+`docs/evidence/d4-disbursement-completed.png` and `-2.png` (the
+disbursement page: 5 successful payments, 0 failed, 12.50 USDC disbursed,
+each receiver with its transaction hash and Success status),
+`docs/evidence/d4-payments.png` and `-2.png` (the payments list). The
+dashboard shows the recipients' synthetic numbers in full. (A sentence
+that followed here was removed on 11 October 2026 by ruling; see the
+entry of that date on the number range.)
+
+Corrected on 11 October 2026, see the entry of that date.
+
+## 2026-10-07: Deliverable 4, part 3: USSD sessions after the batch, OUTSTANDING
+
+The recorded USSD sessions showing each recipient's paid balance and the
+"Last received" line on screen 7 were not captured on 7 October. From
+13:27 UTC the Africa's Talking sandbox failed every dial on
+`*384*45210#` within one second: the Sessions log shows each attempt as
+Failed with 1 hop and 1 s (successful sessions earlier the same day show
+4 hops and 15 to 59 s), and the callback was never contacted (the capture
+server received no gateway request for any of them, while a POST through
+the same public URL returned screen 1 throughout). Four numbers, two
+tunnel providers (cloudflared quick tunnels and localhost.run) and three
+callback paths were tried; the last attempts, two test dials on r1 at
+14:16 UTC, failed the same way. The session set is carried to the next
+working day with a fresh tunnel and a fresh callback path, in the order
+r1, r2 (with one wrong PIN), r3 (then About), r5, r4 (one attempt).
+
+Corrected on 11 October 2026, see the entry of that date.
+
+## 2026-10-10: Deliverable 4, part 3, second attempt: sandbox still failing, OUTSTANDING
+
+The recording session was retried on 10 October 2026 with a fresh
+cloudflared quick tunnel and a freshly rotated callback path. The capture
+server (`npm run ussd:capture`, record
+`test-output/ussd-capture/2026-10-10T11-20-47-584Z.json`, local) listened
+from 11:20 UTC. The public route was confirmed end to end before any dial:
+a POST through the tunnel to the callback path at 11:21:11 UTC reached the
+server and was answered in 2 ms with the expected `400 bad request` for a
+request without a phone number (`GATEWAY_REQUEST_INVALID`); a 404 or 502
+would have meant a wrong path or a dead tunnel. After the callback URL was
+saved in the sandbox dashboard, the test dial on r1 failed exactly as on
+7 October: the gateway's Sessions log shows Failed, 1 hop, no callback
+contact. The server received no request from the gateway at any time; the
+only other entries in the record are two 404 responses at 11:23:27 UTC.
+The recorder reads the body of every request before the path check, and
+both bodies were empty; a gateway callback always carries sessionId,
+phoneNumber and text, so these were not gateway requests on a wrong path
+(the 7 October records show the same empty-body 404 pairs at dial times).
+The callback path the server listened on and the path saved in the
+dashboard were compared by their last four characters and match, which
+rules out a stale clipboard when the callback URL was pasted.
+
+Second-channel diagnostic (Ramy Soliman, dashboard side): a second sandbox
+USSD channel on the same Africa's Talking account, pointed at the same
+callback URL, failed identically (Failed, 1 hop, no callback contact).
+Two channels failing the same way with a verified reachable callback
+places the fault on the account or gateway side, not in the bridge, the
+tunnel or the callback path. A support request has gone to Africa's
+Talking. The capture server and the tunnel were stopped at 11:32 UTC.
+
+The row stays OUTSTANDING, not failed. The five-recipient order is ready
+for when the sandbox is restored: r1 (returning path), r2 (one wrong PIN,
+then the right one), r3 (returning path, then About), r5 (returning
+path), r4 (one attempt, provisioned path). A fresh tunnel and a fresh
+callback path are used on that day, with the gateway test dial on r1
+first.
+
+## 2026-10-07: Deliverable 4, part 4: adapter submodule re-pinned to the merge of adapter PR #15
+
+Adapter PR #15 was approved by ismo90 against its fix-round head
+`3c22c41875451abe5c7591a6467dc6e7f1c6a1cb` and merged into the adapter's
+`main` as `4c235f87c6af45a7c6043fe16b5eb246e148555f` (14:26:39 UTC;
+content verified identical to `3c22c41`, empty diff; the adapter's own
+suite on that commit 380 passed, 3 skipped). The bridge's submodule
+`vendor/stellar-ussd-sep10-adapter` now points at `4c235f87...` instead
+of the earlier `6a0dd61` from the PR branch. The fix round made `machine`
+and `handle` exclusive on the listener's options, so the bridge's server
+wiring now passes `handle` alone (`src/ussd/server.ts`); nothing else
+changed. After the rebuild, the bridge's suite: 121 passed, 2 skipped,
+typecheck clean.
+
+## 2026-10-11: correction to the 7 and 10 October entries on the failed sandbox dials
+
+This entry corrects three earlier entries, which stay as written:
+
+- "2026-10-07: Deliverable 3, USSD receive and balance view", subsection
+  "Session set 4: recipient r5, recorded on video (13:25 UTC)", the
+  paragraph beginning "The returning path and the About screen were not
+  captured on video";
+- "2026-10-07: Deliverable 4, part 3: USSD sessions after the batch,
+  OUTSTANDING";
+- "2026-10-10: Deliverable 4, part 3, second attempt: sandbox still
+  failing, OUTSTANDING".
+
+Withdrawn: the statements that "the callback was never contacted", that
+the gateway "never contacted" the callback, and that two channels failing
+the same way "places the fault on the account or gateway side". The
+support request to Africa's Talking was made on that reading and the
+notice draft's request 3 (sandbox fault) has been removed.
+
+What the gateway dashboard shows (Session Details, read by Ramy Soliman on
+11 October 2026; times UTC). Every failed session carries an error message
+naming its cause:
+
+| When | Sessions | Error message |
+|---|---|---|
+| 7 Oct 12:30 to 12:37 | 3 | 405 Method Not Allowed from the callback |
+| 7 Oct 13:01 to 13:06 | 4 | UnknownHostException for the tunnel hostname started at 11:14, after the capture server had restarted at 12:50 on a new hostname |
+| 7 Oct 13:14 | 1 | response code 530 |
+| 7 Oct 13:23 | 1 | UnknownHostException for the 12:50 hostname, one minute before that hostname served the recorded sessions at 13:24 to 13:26 |
+| 7 Oct 13:27 to 13:28, and 14:16 | 4 and 2 | 502 Bad Gateway: the gateway reached a tunnel edge and no server was behind it |
+| 10 Oct 11:23, main channel | 1 | UnknownHostException for the hostname started on 7 October at 14:02; the callback saved on 10 October never took effect on this channel |
+| 10 Oct 11:28, second channel | 1 | UnknownHostException for a hostname that appears in no capture record |
+
+Cause: a cloudflared quick tunnel gets a new hostname on every start ("The
+hostname changes each time you create a Quick Tunnel", Cloudflare
+TryCloudflare documentation, read 11 October 2026). The capture server and
+its tunnel were restarted during 7 October (11:14, 12:50, 14:02) and again
+on 10 October, and the callback saved in the dashboard kept an earlier
+hostname. The pre-dial check compared the last four characters of the
+path, which matched, and never the host. There was no gateway fault.
+
+What the capture records do and do not show. The records hold two 404
+responses within half a second at each failed dial time (7 October
+12:38:05, 14:16:48; 10 October 11:23:27). The recorder of that time kept
+no method, path, header or source for them, so they could not be told
+from gateway requests; finding 2 of the Deliverable 3 entry had already
+recorded that saving the callback in the dashboard fires two GET requests
+200 ms apart, answered 404 by the POST-only listener. The bridge's
+listener answers 404, never 405, to a non-POST method or a path that is
+not the callback path; the origin of the 405 named for 12:30 to 12:37 is
+not established by our records.
+
+Fix in the tooling (branch `d4-batch-evidence`, 11 October):
+
+- the recorder keeps, for every request and every status, the method, the
+  path as segment lengths (never the text), whether the path equals the
+  callback path, query presence, content type and length, bytes read,
+  user agent and the tunnel's forwarding headers;
+- the capture script starts and owns the tunnel for the whole session,
+  writes every tunnel start to the record with its time and hostname,
+  prints the hostname in full on start and again on any restart with the
+  line that the dashboard callback must be updated, and prints "READY TO
+  DIAL" only when the hostname resolves on two public resolvers (1.1.1.1
+  and 8.8.8.8) and a well-formed gateway POST through the public URL
+  returns screen 1;
+- a fixed hostname is supported through `USSD_TUNNEL_MODE=named` (a
+  Cloudflare named tunnel) or `external` (another provider), documented in
+  `docs/integration-guide.md`, section 3; the sandbox sessions continue on
+  a quick tunnel with the hostname confirmed in the dashboard before each
+  dial.
+
+Also established on 11 October, 06:57 UTC, through a quick tunnel in front
+of the server (record `2026-10-11T06-57-13-752Z.json`, local): the tunnel
+does not redirect http to https (an http POST arrived as a POST with its
+body and `x-forwarded-proto: http` and was answered with screen 1); a
+trailing slash, a GET, a HEAD and a POST on `/` are answered 404 "not
+found"; an empty-body POST on the callback path is answered 400 "bad
+request". Every one of those bodies is one the gateway treats as invalid,
+since none starts with CON or END.
+
+`docs/period-report-2026-10-draft.md` (finding 4 and the clips paragraph)
+and `docs/instaward-evidence-package.md` (row 4.3) are corrected in the
+same commit. `README.md`, `docs/walkthrough-deviations.md` and
+`docs/demo-video-plan.md` carry no sentence attributing the failures to
+the gateway and are unchanged.
+
+## 2026-10-11: Deliverable 4, part 3, third attempt: the five USSD sessions after the batch, CAPTURED
+
+### What this section proves, in plain language
+
+Each of the five recipients paid by the 7 October batch dialled the
+sandbox service code in the Africa's Talking sandbox simulator and saw
+the account screen with the balance the batch paid and the "Last
+received" line for that payment. r1 and r2 entered one wrong PIN first
+(E1). r3 also opened the About screen. r4, which had no PIN, set one on
+first dial (D-1) after two attempts rejected as too easy to guess (A-4);
+its account read then failed once (E4) and a second dial showed the
+account screen. Evidence row 4.3 is captured.
+
+### Environment
+
+- Capture server from 07:10 UTC (branch `d4-batch-evidence`, the capture
+  script owning the tunnel): a cloudflared quick tunnel started at
+  07:10:22 UTC on hostname `sas-truly-relates-gather.trycloudflare.com`,
+  written to the record as the only tunnel start of the session; a fresh
+  callback path in `.env`.
+- Readiness at 07:10:28 UTC: the hostname resolved on 1.1.1.1 and 8.8.8.8,
+  and a well-formed gateway POST through the public URL returned screen 1
+  (200, 5 ms); the script then printed READY TO DIAL.
+- Record: `docs/evidence/d4-ussd-capture-2026-10-11.json` (MSISDNs masked,
+  every four-digit input masked, callback path never written; the
+  operator's own address on the probes replaced by `<operator address>`;
+  the gateway's address kept). The record also holds the tunnel start and
+  both readiness checks.
+
+### The callback save and the delay, as observed on this day
+
+The callback URL (https, the hostname above, the path, no trailing slash)
+was saved on channel `*384*45210#` in the sandbox dashboard at 07:17 UTC
+and the Service Codes page showed it after a reload. A test dial at 07:20
+failed; the dashboard's Session Details named the cause: UnknownHostException
+for the hostname saved on 10 October. The callback was saved again at
+07:22; a dial at 07:23 failed the same way, naming the same old hostname.
+A dial at 07:28:52 reached the server (the first gateway request in the
+record: POST on the callback path, user agent `at-ussd-api/1.0`, source
+`18.133.205.228`, forwarded protocol https) and the simulator showed
+screen 1. Those are the four times as observed once: saved 07:17 and
+07:22, old host dialled at 07:20 and 07:23, new host at 07:28:52.
+
+### The sessions (times UTC, inputs masked)
+
+Every gateway request in the record is a POST on the callback path with
+user agent `at-ussd-api/1.0` from `18.133.205.228`, answered 200; the
+slowest answer took 968 ms (the account screen, two Horizon reads). The
+31 requests fall into ten sessions:
+
+| Session | Number | Callbacks | Inputs | Final screen |
+|---|---|---|---|---|
+| 07:28:52 | r1 `+2547***5311` | 1 | (dial) | CON Saleem / 1. My account / 2. About (the connectivity dial, ended by the operator) |
+| 07:32:58 | r1 | 1 | (dial) | CON Saleem / 1. My account / 2. About (the operator's first dial from the simulator) |
+| 07:36:02 to 07:36:50 | r1 | 4 | (dial), 1, ####, #### | E1 "Wrong PIN. 2 attempts left" on the first PIN, then END Signed in as GDMN..QUUU / Balance 1.50 USDC / Last received 1.50 USDC, 7 Oct / Test only, no funds move |
+| 07:37:59 to 07:38:30 | r1 | 4 | (dial), 1, ####, #### | the same path again (the simulator was still connected as r1 when r2 was intended); same final screen |
+| 07:42:14 to 07:42:55 | r2 `+2547***5322` | 4 | (dial), 1, ####, #### | E1 on the first PIN, then END Signed in as GA6R..ZCNA / Balance 2.00 USDC / Last received 2.00 USDC, 7 Oct / Test only, no funds move |
+| 07:44:27 to 07:44:44 | r3 `+2547***5333` | 3 | (dial), 1, #### | END Signed in as GADZ..HMBZ / Balance 2.50 USDC / Last received 2.50 USDC, 7 Oct / Test only, no funds move |
+| 07:45:00 to 07:45:03 | r3 | 2 | (dial), 2 | END Saleem, a payment service for basic phones. / saleem.digital / Test only, no funds move |
+| 07:47:44 to 07:47:57 | r5 `+2547***5355` | 3 | (dial), 1, #### | END Signed in as GCKM..XAAX / Balance 3.50 USDC / Last received 3.50 USDC, 7 Oct / Test only, no funds move |
+| 07:50:08 to 07:50:31 | r4 `+2547***5344` | 6 | (dial), 1, ####, ####, ####, #### | Create a 4 digit PIN; two entries answered A-4 "That PIN is too easy to guess"; the third accepted, Enter the PIN again; after the matching entry the PIN was saved (event `pinSaved`) and the account read failed, END Service unavailable. / Please try again later. (E4) |
+| 07:50:38 to 07:50:45 | r4 | 3 | (dial), 1, #### | END Signed in as GBFQ..FAVO / Balance 3.00 USDC / Last received 3.00 USDC, 7 Oct / Test only, no funds move |
+
+The balances and "Last received" amounts match the batch of 7 October
+(1.5, 2, 2.5, 3 and 3.5 USDC, ledgers 5071608 to 5071614). r4 was planned
+as one attempt; the second dial followed the E4 answer.
+
+### Finding while running
+
+r4's first session ended with E4 immediately after the PIN was saved. The
+service log shows `event=viewFailed code=TypeError`: the Horizon client
+rethrows a failed `fetch` as the runtime's TypeError when the failure is
+neither a timeout (which becomes `HorizonTimeoutError`) nor a Horizon
+status (which becomes `HorizonResponseError`), so this was a transport
+failure on one of the two Horizon reads, not a timeout and not a Horizon
+error response. The same two reads succeeded 14 seconds later in the
+second session. E4 is the designed answer for any failure to read the
+account (N-3); the PIN was saved before the read, which is why the second
+dial went straight to "Enter your PIN". The `viewFailed` log line carries
+no cause for an uncoded error; adding the underlying error code to that
+line is a follow-up.
+
+### Offline checks
+
+Suite 143 passed, 2 skipped; typecheck clean; secret scan clean.
+
+## 2026-10-11: synthetic numbers moved to the non-assignable +999 range; dashboard captures masked
+
+### What this entry records, in plain language
+
+Until this date the five recipient numbers in the committed disbursement
+file, the numbers in the unit tests, the live test's generated numbers and
+the Deliverable 1 retest script's number were drawn from `+2547` followed
+by random digits. That range is live Kenyan mobile numbering, so a random
+draw can be the number of a real subscriber, and five such numbers were
+bound to testnet accounts in the SDP tenant and shown in full in two
+dashboard captures. Whether any of them belongs to someone cannot be
+known; the earlier sentence saying they "belong to no one" is withdrawn
+and removed from the 7 October entry (Deliverable 4, part 2) by ruling of
+11 October 2026. This is the only edit ever made inside an earlier entry.
+
+### What changed
+
+- Tests, the live provisioning test, `scripts/retest-d1.mjs`, the
+  readiness probe number and the masking examples now use the `+999`
+  country code, which is not assignable to any network (the adapter's own
+  tests use the same convention).
+- `docs/evidence/d2-disbursement.csv` now carries the same five accounts
+  and amounts under `+9997...` numbers whose last four digits match the
+  masked forms used throughout this file (`+9997***5311` and so on). Its
+  SHA-256 is `e156c2eb9fea48d3e65427548c88106f513bb206f234bcba453aca8d071c5072`. The file as uploaded to the SDP on 7 October
+  carried the `+2547` numbers and had SHA-256
+  `b4d8c873d47644ff5a45b2ab3b025be2a1834ac8446f917cdef0e73345e6a88f`;
+  git history keeps that version, so the numbers remain in history.
+- `docs/evidence/d4-disbursement-completed.png` and `-2.png` showed the
+  five numbers in full in the Contact info column. Both are replaced by
+  copies with that column masked to the convention; the originals remain
+  in git history. `d4-payments.png` and `-2.png` show no number and are
+  unchanged.
+- The SDP tenant on the evidence machine still holds the five receivers
+  under the `+2547` numbers from 7 October; they are not re-registered.
+  Any new provisioning run uses `+999` numbers.
+- The masked transcripts in `docs/evidence/*.json` carry only masked
+  forms (`+2547***5311`) and are unchanged.
+
+### Offline checks
+
+Suite, typecheck and secret scan: recorded in the pull request that
+carries this entry.

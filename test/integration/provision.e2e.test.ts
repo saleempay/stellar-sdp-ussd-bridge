@@ -46,9 +46,9 @@ describe.skipIf(!enabled)('D2 live: five recipients on testnet', () => {
     const dir = join('test-output', 'd2-e2e', run);
     mkdirSync(dir, { recursive: true });
 
-    // five synthetic numbers in the sandbox convention, unique per run
+    // five synthetic numbers in the non-assignable +999 country code, unique per run
     const seed = String(Math.floor(Math.random() * 1e6)).padStart(6, '0');
-    const input = `phone,id,amount\n${[1.5, 2, 2.5, 3, 3.5].map((a, i) => `+2547${seed}${i + 1}${i + 1},r${i + 1},${a}`).join('\n')}\n`;
+    const input = `phone,id,amount\n${[1.5, 2, 2.5, 3, 3.5].map((a, i) => `+9997${seed}${i + 1}${i + 1},r${i + 1},${a}`).join('\n')}\n`;
     writeFileSync(join(dir, 'recipients.csv'), input);
     const rows = parseInputCsv(input);
     const deps = {

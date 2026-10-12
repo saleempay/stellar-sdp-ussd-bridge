@@ -36,9 +36,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Loopback only: nothing here needs to be reachable off host, and the
+    # admin API can create tenants the host account then funds. A published
+    # port without an address binds 0.0.0.0 (and bypasses ufw on Linux).
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
-      - "${ADMIN_PORT:-8003}:${ADMIN_PORT:-8003}"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${ADMIN_PORT:-8003}:${ADMIN_PORT:-8003}"
     environment:
       ENVIRONMENT: localhost
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -129,9 +132,10 @@ services:
     image: stellar/stellar-disbursement-platform-frontend:7.0.0@sha256:edec92a3c3169a041364ea218ec55c905b7e869af8ecb936f0a87ca5f45ea2b7
     platform: linux/amd64
     depends_on:
-      - sdp-api
+      sdp-api:
+        condition: service_healthy
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
     volumes:
       - ./env-config.js:/usr/share/nginx/html/settings/env-config.js:ro
 

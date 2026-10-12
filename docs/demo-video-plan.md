@@ -33,8 +33,11 @@ public keys, amounts are testnet USDC.
 | 8 | Dial again, enter 2 | screen 8: About |
 | 9 | Terminal: the capture banner | the callback path masked, the tunnel base URL only |
 
-After Deliverable 4 pays the batch, shots 5 and 7 are repeated for the
-same recipient and show the balance and the "Last received" line.
+Shots 1 to 4 are published as `docs/evidence/d3-ussd-provisioned-path-r5-2026-10-07.mp4`
+(recorded 7 October 2026). After Deliverable 4 pays the batch, each
+recipient records shots 5 to 7 (returning path: Enter your PIN, screen 7
+with the paid balance and the "Last received" line), one of them with the
+wrong PIN first (E1) and one with About (shot 8).
 
 ## Deliverable 1, 2 and 4 shots
 

@@ -37,6 +37,18 @@ export interface PaymentRecord {
   paging_token?: string;
 }
 
+/** One record of GET /transactions/{hash} (subset of fields). */
+export interface TransactionRecord {
+  hash: string;
+  ledger: number;
+  created_at: string;
+  successful: boolean;
+  source_account: string;
+  operation_count: number;
+  memo?: string;
+  memo_type?: string;
+}
+
 export interface HorizonAccountRecord extends HorizonAccount {
   subentryCount: number;
   numSponsoring: number;
@@ -123,6 +135,21 @@ export class FetchHorizon implements HorizonLike {
   async paymentsFor(accountId: string, limit = 200): Promise<PaymentRecord[]> {
     const res = await this.call('payments', `/accounts/${encodeURIComponent(accountId)}/payments?order=desc&limit=${limit}`);
     if (!res.ok) throw new HorizonResponseError('payments', res.status, await res.json().catch(() => undefined));
+    const page = (await res.json()) as { _embedded: { records: PaymentRecord[] } };
+    return page._embedded.records;
+  }
+
+  /** GET /transactions/{hash}: the transaction record (Horizon API). */
+  async transaction(hash: string): Promise<TransactionRecord> {
+    const res = await this.call('transaction', `/transactions/${encodeURIComponent(hash)}`);
+    if (!res.ok) throw new HorizonResponseError('transaction', res.status, await res.json().catch(() => undefined));
+    return (await res.json()) as TransactionRecord;
+  }
+
+  /** GET /transactions/{hash}/operations: the operations of one transaction. */
+  async operationsOf(hash: string): Promise<PaymentRecord[]> {
+    const res = await this.call('operations', `/transactions/${encodeURIComponent(hash)}/operations?limit=200`);
+    if (!res.ok) throw new HorizonResponseError('operations', res.status, await res.json().catch(() => undefined));
     const page = (await res.json()) as { _embedded: { records: PaymentRecord[] } };
     return page._embedded.records;
   }

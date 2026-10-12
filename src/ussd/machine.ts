@@ -18,7 +18,10 @@
  *
  * PIN wording (adapter issue #9): "PIN saved" is rendered only by the
  * callback that stored the hash; "PIN accepted" only after verifyPinAttempt
- * succeeded. Setup is reached only when no record exists, so a stored PIN
+ * succeeded. Setup is entered only when no record exists, and the record
+ * is checked again at the moment of storing (pinSetup2): two sessions from
+ * one number that both entered setup end with the first stored PIN kept
+ * and the second session answered the enter-PIN screen, so a stored PIN
  * is never replaced. Nothing in this flow signs anything, so there is no
  * signing claim; a replayed final callback is answered from the listener's
  * cache.
@@ -41,7 +44,7 @@ import {
   type SessionStore,
   type UssdSession,
 } from 'stellar-ussd-sep10-adapter';
-import { AccountNotOnChainError, NoUsdcTrustlineError } from './errors.js';
+import { AccountNotOnChainError, CreationCappedError, CreationPendingError, NoUsdcTrustlineError } from './errors.js';
 import { SCREENS, type AccountView } from './screens.js';
 
 export interface BridgeMachineDeps {
@@ -52,8 +55,10 @@ export interface BridgeMachineDeps {
   loadView: (accountId: string) => Promise<AccountView>;
   /**
    * Sponsored account creation on dial. Undefined means creation on dial is
-   * off (USSD_CREATE_ON_DIAL=false, the operator-provisioned posture): a
-   * number with no account gets E3.
+   * off (USSD_CREATE_ON_DIAL unset or false, the operator-provisioned
+   * posture and the default): a number with no account gets E3. A
+   * CreationCappedError thrown here (sponsor balance floor, hourly cap)
+   * also answers E3; any other failure answers E4.
    */
   createAccount?: (msisdn: string) => Promise<{ accountId: string; creationTxHash?: string }>;
   msisdn: MsisdnInferenceConfig;
@@ -153,6 +158,15 @@ async function transition(
         session.state = 'pinSetup1';
         return SCREENS.pinSetupMismatch();
       }
+      // establishPin is an unconditional put in the adapter, so the record
+      // is checked again here: a PIN stored by another session of this
+      // number since the welcome step is kept, and this session is asked
+      // to enter it.
+      if (await hasPin({ store: deps.pins }, session.msisdn)) {
+        log(`session=${session.sessionId} event=pinSetupRaced`);
+        session.state = 'pinEnter';
+        return SCREENS.pinEnter();
+      }
       await establishPin({ store: deps.pins, now: () => now }, session.msisdn, input);
       log(`session=${session.sessionId} event=pinSaved`);
       if (session.accountId !== undefined) {
@@ -172,6 +186,16 @@ async function transition(
           session.accountId = created.accountId;
           log(`session=${session.sessionId} event=accountCreated tx=${created.creationTxHash ?? 'none'}`);
         } catch (err) {
+          if (err instanceof CreationCappedError) {
+            // E3, not E4: the service is up, this number is not served today
+            log(`session=${session.sessionId} event=creationCapped reason=${err.reason}`);
+            return SCREENS.endNoAccount();
+          }
+          if (err instanceof CreationPendingError) {
+            // E4: an earlier creation for this number may still land; try again later
+            log(`session=${session.sessionId} event=creationPending`);
+            return SCREENS.endServiceDown();
+          }
           log(`session=${session.sessionId} event=accountCreateFailed code=${(err as { code?: string })?.code ?? (err as Error)?.name ?? 'unknown'}`);
           return SCREENS.endServiceDown();
         }

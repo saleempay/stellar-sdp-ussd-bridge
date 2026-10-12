@@ -1,0 +1,283 @@
+/**
+ * Start an SDP disbursement and follow it to completion, then confirm each
+ * payment on Horizon. Everything is read through the typed client and the
+ * bridge's Horizon client, so the offline tests drive it with fakes.
+ *
+ * SDP 7.0.0 facts used: PATCH /disbursements/{id}/status {"status":"STARTED"}
+ * (disbursement_handler.go:96-98), GET /payments paginated (page_limit
+ * default 20, maximum 100, validators/query_validator.go:23-24; no
+ * disbursement filter, internal/data/payments.go:69; `pagination.next`
+ * present while more pages exist, httpresponse/paginated_response.go) with
+ * the payment's `status`, `stellar_transaction_id` and nested
+ * `disbursement.id`, the disbursement's `total_payments`
+ * (internal/data/disbursements.go:43), statuses DRAFT READY PENDING PAUSED
+ * SUCCESS FAILED CANCELED (payments_state_machine.go), the payment job
+ * interval SCHEDULER_PAYMENT_JOB_SECONDS. Horizon: GET /transactions/{hash}
+ * and its operations (payment: from, to, amount, asset_code, asset_issuer).
+ */
+import type { Payment, SdpTenantClient } from './client.js';
+import { maskAccount } from './facts.js';
+import type { FetchHorizon } from '../provision/horizon.js';
+
+export const TERMINAL_PAYMENT_STATUSES = new Set(['SUCCESS', 'FAILED', 'CANCELED']);
+
+export interface PaymentSnapshot {
+  id: string;
+  amount: string;
+  status: string;
+  txHash: string | null;
+  /** Recipient address, masked. */
+  toMasked: string | null;
+  /** Receiver record id, when present. */
+  receiverId: string | null;
+}
+
+export interface TimelineEntry {
+  at: string;
+  disbursementStatus: string;
+  payments: PaymentSnapshot[];
+}
+
+export interface BatchDeps {
+  client: SdpTenantClient;
+  horizon: Pick<FetchHorizon, 'transaction' | 'operationsOf' | 'loadAccount'>;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
+}
+
+export interface BatchOptions {
+  disbursementId: string;
+  walletId?: string;
+  /** Poll interval. Default 5 s. */
+  pollMs?: number;
+  /** Give up waiting after this. Default 10 minutes. */
+  timeoutMs?: number;
+  asset: { code: string; issuer: string };
+  /** When true, do not send the STARTED patch (the batch was already started). */
+  skipStart?: boolean;
+  /**
+   * The distribution account the batch pays from, full address. When given,
+   * the Horizon confirmation also checks the payment's source.
+   */
+  distributionAccount?: string;
+}
+
+export interface ConfirmedPayment extends PaymentSnapshot {
+  ledger?: number;
+  createdAt?: string;
+  successful?: boolean;
+  /** The payment operation as Horizon reports it. */
+  operation?: { from: string; to: string; amount: string; asset: string };
+  /** What went wrong confirming, if anything. */
+  confirmError?: string;
+}
+
+export interface BatchResult {
+  disbursementId: string;
+  started: boolean;
+  finalStatus: string;
+  timedOut: boolean;
+  /** Set when the run ended while the listed payments still did not add up to the disbursement's rows. */
+  incomplete?: { listed: number; expected: number };
+  timeline: TimelineEntry[];
+  payments: ConfirmedPayment[];
+}
+
+/** The recipient address of a payment row, full, for the confirmation only; never serialised. */
+function recipientOf(p: Payment): string | undefined {
+  return (p.receiver_wallet as { stellar_address?: string } | undefined)?.stellar_address;
+}
+
+/** Decimal amount strings compared as stroops: "1.5" equals "1.5000000". */
+function sameAmount(a: string, b: string): boolean {
+  try {
+    return totalAmount([{ amount: a }]) === totalAmount([{ amount: b }]);
+  } catch {
+    return false;
+  }
+}
+
+function snapshot(p: Payment): PaymentSnapshot {
+  const rw = p.receiver_wallet as { stellar_address?: string; receiver?: { id?: string } } | undefined;
+  return {
+    id: p.id,
+    amount: p.amount,
+    status: p.status,
+    txHash: p.stellar_transaction_id || null,
+    toMasked: rw?.stellar_address ? maskAccount(rw.stellar_address) : null,
+    receiverId: rw?.receiver?.id ?? null,
+  };
+}
+
+export const PAYMENTS_PAGE_LIMIT = 100;
+
+/** The listed payments do not add up to the disbursement's rows; the set is not complete. */
+export class PaymentsIncompleteError extends Error {
+  constructor(readonly disbursementId: string, readonly listed: number, readonly expected: number) {
+    super(`disbursement ${disbursementId} has ${expected} payment rows but ${listed} were listed; the payment set is incomplete`);
+    this.name = 'PaymentsIncompleteError';
+  }
+}
+
+/**
+ * Payments of one disbursement: every page of the tenant's list at the
+ * maximum page size, filtered client-side, until no next page remains.
+ * The pages are read in `created_at` ascending order, which does not move
+ * while a batch runs (the SDP's default, `updated_at` descending, re-sorts
+ * on every status change, so a row could cross the page boundary between
+ * two requests). Rows are de-duplicated by id. When the expected count is
+ * given (the disbursement's total_payments), the set is refused unless the
+ * count matches, so a partial set can never be judged complete.
+ */
+export async function paymentsOf(client: SdpTenantClient, disbursementId: string, walletId?: string, expectedCount?: number): Promise<Payment[]> {
+  const found = new Map<string, Payment>();
+  for (let page = 1; ; page += 1) {
+    const res = await client.listPayments(walletId, { page, pageLimit: PAYMENTS_PAGE_LIMIT, sort: 'created_at', direction: 'asc' });
+    for (const p of res.data) {
+      if ((p.disbursement as { id?: string } | undefined)?.id === disbursementId && !found.has(p.id)) found.set(p.id, p);
+    }
+    if (!res.pagination?.next || res.data.length === 0) break;
+  }
+  if (expectedCount !== undefined && found.size !== expectedCount) {
+    throw new PaymentsIncompleteError(disbursementId, found.size, expectedCount);
+  }
+  return [...found.values()];
+}
+
+export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<BatchResult> {
+  const pollMs = opts.pollMs ?? 5_000;
+  const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
+  const timeline: TimelineEntry[] = [];
+  let started = false;
+  if (!opts.skipStart) {
+    await deps.client.patchDisbursementStatus(opts.disbursementId, 'STARTED', opts.walletId);
+    started = true;
+  }
+  const deadline = deps.now() + timeoutMs;
+  let lastKey = '';
+  let finalStatus = '';
+  let timedOut = false;
+  /** Full recipient address per payment id, kept out of every serialised structure. */
+  const recipients = new Map<string, string>();
+  /** Set when the last poll listed a payment set that did not add up; cleared by a complete read. */
+  let incomplete: PaymentsIncompleteError | undefined;
+  for (;;) {
+    const d = await deps.client.getDisbursement(opts.disbursementId, opts.walletId);
+    let raw: Payment[];
+    try {
+      raw = await paymentsOf(deps.client, opts.disbursementId, opts.walletId, d.total_payments);
+      incomplete = undefined;
+    } catch (err) {
+      // A set that does not add up is "poll again", not fatal: a page may
+      // have been read while the SDP was writing. It becomes the outcome
+      // only when the deadline passes with the set still incomplete.
+      if (!(err instanceof PaymentsIncompleteError)) throw err;
+      incomplete = err;
+      if (deps.now() >= deadline) {
+        timedOut = true;
+        finalStatus = d.status;
+        break;
+      }
+      await deps.sleep(pollMs);
+      continue;
+    }
+    for (const p of raw) {
+      const to = recipientOf(p);
+      if (to) recipients.set(p.id, to);
+    }
+    const payments = raw.map(snapshot);
+    finalStatus = d.status;
+    const key = `${d.status}|${payments.map((p) => `${p.id}:${p.status}:${p.txHash ?? ''}`).join(',')}`;
+    if (key !== lastKey) {
+      timeline.push({ at: new Date(deps.now()).toISOString(), disbursementStatus: d.status, payments });
+      lastKey = key;
+    }
+    const allTerminal = payments.length > 0 && payments.every((p) => TERMINAL_PAYMENT_STATUSES.has(p.status));
+    if (allTerminal && d.status !== 'STARTED') break;
+    if (allTerminal && d.status === 'STARTED' && timeline.length > 1) {
+      // payments are final; give the disbursement one more poll to flip
+      await deps.sleep(pollMs);
+      const again = await deps.client.getDisbursement(opts.disbursementId, opts.walletId);
+      finalStatus = again.status;
+      if (again.status !== timeline[timeline.length - 1]!.disbursementStatus) {
+        timeline.push({ at: new Date(deps.now()).toISOString(), disbursementStatus: again.status, payments });
+      }
+      break;
+    }
+    if (deps.now() >= deadline) {
+      timedOut = true;
+      break;
+    }
+    await deps.sleep(pollMs);
+  }
+  const last = timeline[timeline.length - 1]?.payments ?? [];
+  const confirmed: ConfirmedPayment[] = [];
+  for (const p of last) {
+    const c: ConfirmedPayment = { ...p };
+    if (p.txHash) {
+      try {
+        const tx = await deps.horizon.transaction(p.txHash);
+        c.ledger = tx.ledger;
+        c.createdAt = tx.created_at;
+        c.successful = tx.successful;
+        const ops = await deps.horizon.operationsOf(p.txHash);
+        const pay = ops.find((o) => o.type === 'payment' && o.asset_code === opts.asset.code && o.asset_issuer === opts.asset.issuer);
+        if (pay && pay.from && pay.to && pay.amount) {
+          c.operation = { from: maskAccount(pay.from), to: maskAccount(pay.to), amount: pay.amount, asset: `${pay.asset_code}:${maskAccount(pay.asset_issuer)}` };
+          // The confirmation means what the report says only if the
+          // operation pays this payment's recipient, this amount, from the
+          // distribution account; anything else is a mismatch, not a
+          // confirmation.
+          const problems: string[] = [];
+          const expectedTo = recipients.get(p.id);
+          if (!expectedTo) problems.push('the SDP row carries no recipient address to compare');
+          else if (pay.to !== expectedTo) problems.push(`recipient ${maskAccount(pay.to)} is not the SDP row's ${maskAccount(expectedTo)}`);
+          if (!sameAmount(pay.amount, p.amount)) problems.push(`amount ${pay.amount} is not the SDP row's ${p.amount}`);
+          if (opts.distributionAccount && pay.from !== opts.distributionAccount) problems.push(`source ${maskAccount(pay.from)} is not the distribution account ${maskAccount(opts.distributionAccount)}`);
+          if (tx.successful === false) problems.push('the transaction is not successful on Horizon');
+          if (problems.length) c.confirmError = `mismatch: ${problems.join('; ')}`;
+        } else {
+          c.confirmError = 'no USDC payment operation with the pinned issuer in this transaction';
+        }
+      } catch (err) {
+        c.confirmError = (err as Error).message;
+      }
+    }
+    confirmed.push(c);
+  }
+  const result: BatchResult = { disbursementId: opts.disbursementId, started, finalStatus, timedOut, timeline, payments: confirmed };
+  if (incomplete) result.incomplete = { listed: incomplete.listed, expected: incomplete.expected };
+  return result;
+}
+
+/** Sum of a disbursement's payment amounts as a string with 7 decimals (string arithmetic). */
+export function totalAmount(payments: Array<{ amount: string }>): string {
+  let stroops = 0n;
+  for (const p of payments) {
+    const m = /^(\d+)(?:\.(\d{1,7}))?$/.exec(p.amount);
+    if (!m) throw new Error(`amount not a decimal: ${p.amount}`);
+    stroops += BigInt(m[1]!) * 10_000_000n + BigInt((m[2] ?? '').padEnd(7, '0'));
+  }
+  const whole = stroops / 10_000_000n;
+  const frac = (stroops % 10_000_000n).toString().padStart(7, '0');
+  return `${whole}.${frac}`;
+}
+
+export function formatBatchReport(r: BatchResult): string {
+  const lines = [`disbursement ${r.disbursementId}: ${r.finalStatus}${r.timedOut ? ' (timed out waiting)' : ''}${r.incomplete ? ` (payment set incomplete: ${r.incomplete.listed} of ${r.incomplete.expected} listed)` : ''}; ${r.started ? 'started by this run' : 'already started'}`];
+  for (const p of r.payments) {
+    lines.push(
+      [
+        p.toMasked ?? '(no address)',
+        p.amount.padStart(12),
+        p.status.padEnd(8),
+        p.txHash ? `tx ${p.txHash}` : 'no transaction',
+        p.ledger ? `ledger ${p.ledger}` : '',
+        p.operation ? `${p.operation.amount} ${p.operation.asset.split(':')[0]} ${p.operation.from} -> ${p.operation.to}` : '',
+        p.confirmError ? `confirm: ${p.confirmError}` : '',
+      ].join('  ').trimEnd(),
+    );
+  }
+  lines.push(`timeline: ${r.timeline.map((t) => `${t.at.slice(11, 19)} ${t.disbursementStatus} [${t.payments.map((p) => p.status).join(' ')}]`).join(' > ')}`);
+  return lines.join('\n');
+}

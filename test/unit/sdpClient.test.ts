@@ -171,10 +171,10 @@ describe('SdpTenantClient', () => {
     const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { data: [], pagination: {} } }));
     const c = new SdpTenantClient({ ...base, token: 't', fetch: fetchImpl });
     await c.patchDisbursementStatus('d1', 'STARTED');
-    await c.listReceivers('+2547 00');
+    await c.listReceivers('+9997 00');
     expect(calls[0]?.url).toBe('http://api:8000/disbursements/d1/status');
     expect(JSON.parse(calls[0]!.body!)).toEqual({ status: 'STARTED' });
-    expect(calls[1]?.url).toBe('http://api:8000/receivers?q=%2B2547%2000');
+    expect(calls[1]?.url).toBe('http://api:8000/receivers?q=%2B9997%2000');
   });
 
   it('an error body is truncated in the message', async () => {
