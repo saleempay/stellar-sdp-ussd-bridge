@@ -6,11 +6,15 @@ import { EXISTING, FakeHorizon, FakeSigner, GONE, NETWORK, SPONSOR, USDC, reject
 function setup(opts: { sponsorXlm?: string } = {}) {
   const horizon = new FakeHorizon();
   horizon.addAccount(SPONSOR, { xlm: opts.sponsorXlm ?? '100.0000000' });
+  if (!horizon.accounts.has(EXISTING)) horizon.addAccount(EXISTING, { xlm: '0', trustlines: [USDC] });
   const signer = new FakeSigner();
   const s = stores();
-  const deps: ProvisionDeps = { horizon, signer, ...s, sponsorPublicKey: SPONSOR, asset: USDC, networkPassphrase: NETWORK, paymentIdPrefix: 'batch' };
-  return { horizon, signer, deps, ...s };
+  let clock = Date.parse('2026-10-12T09:00:00Z');
+  const deps: ProvisionDeps = { horizon, signer, ...s, sponsorPublicKey: SPONSOR, asset: USDC, networkPassphrase: NETWORK, paymentIdPrefix: 'batch', now: () => clock };
+  return { horizon, signer, deps, ...s, advance: (ms: number) => { clock += ms; } };
 }
+/** The creation time bound plus the grace: after this an absent account means the creation did not land. */
+const PAST_THE_BOUND_MS = 30_000 + 10_000 + 1;
 const rows: InputRow[] = [
   { rowIndex: 1, phone: '+999700000001', id: 'r1', amount: '1.5' },
   { rowIndex: 2, phone: '+999700000002', id: 'r2', amount: '2' },
@@ -115,12 +119,22 @@ describe('provisionRecipients', () => {
     expect(report.outcomes[0]?.errorCode).toBe('sponsor_underfunded');
   });
 
-  it('maps a Horizon timeout to horizon_timeout with the operation name', async () => {
+  it('maps a Horizon timeout on a read to horizon_timeout with the operation name', async () => {
+    const { horizon, deps, accountStore } = setup();
+    await accountStore.put('+999700000001', EXISTING);
+    horizon.failLoadFor.set(EXISTING, timeout('loadAccount'));
+    const report = await provisionRecipients([rows[0]!], deps);
+    expect(report.outcomes[0]?.errorCode).toBe('horizon_timeout');
+    expect(report.outcomes[0]?.message).toContain('loadAccount');
+  });
+
+  it('a timeout on the creation submission is never a plain failure: the transaction may still land, so the row is uncertain', async () => {
     const { horizon, deps } = setup();
     horizon.nextErrors = [timeout('submitTransaction')];
     const report = await provisionRecipients([rows[0]!], deps);
-    expect(report.outcomes[0]?.errorCode).toBe('horizon_timeout');
+    expect(report.outcomes[0]?.status).toBe('uncertain');
     expect(report.outcomes[0]?.message).toContain('submitTransaction');
+    expect(report.outcomes[0]?.message).toContain('can still land until');
   });
 
   it('a mapping whose account is not on chain is a resolver failure and the mapping is kept', async () => {
@@ -163,17 +177,75 @@ describe('ambiguous submissions (timeout, 5xx, no result codes)', () => {
     expect(horizon.submissions).toHaveLength(0);
   });
 
-  it('a timeout with nothing landed: the row fails as horizon_timeout, the pending record is cleared, the next run creates', async () => {
-    const { horizon, deps, pendingStore, accountStore } = setup();
+  it('a timeout with nothing landed yet: uncertain, the pending record holds with the time bound, a re-run inside the bound creates nothing, a re-run after it creates', async () => {
+    const { horizon, signer, deps, pendingStore, accountStore, advance } = setup();
     horizon.nextErrors = [timeout('submitTransaction')];
     const first = await provisionRecipients([row], deps);
-    expect(first.outcomes[0]?.errorCode).toBe('horizon_timeout');
-    expect(first.outcomes[0]?.status).toBe('failed');
-    expect(await pendingStore.get(row.phone)).toBeUndefined();
+    expect(first.outcomes[0]?.status).toBe('uncertain');
+    expect(first.outcomes[0]?.errorCode).toBe('creation_uncertain');
+    expect(first.outcomes[0]?.accountId).toBe(signer.lastCreated);
+    expect(first.sdpRows).toEqual([]);
+    const pending = await pendingStore.get(row.phone);
+    expect(pending?.accountId).toBe(signer.lastCreated);
+    // the bound: 30 s from the moment the error surfaced, plus the 10 s grace
+    expect(pending?.expiresAt).toBe(new Date(Date.parse('2026-10-12T09:00:00Z') + 40_000).toISOString());
     expect(await accountStore.get(row.phone)).toBeUndefined();
+    // inside the bound: nothing is submitted, the row stays uncertain
+    advance(20_000);
+    const second = await provisionRecipients([row], deps);
+    expect(second.outcomes[0]?.status).toBe('uncertain');
+    expect(second.outcomes[0]?.message).toContain('no new creation starts for this number before then');
+    expect(horizon.submissions).toHaveLength(0);
+    expect((await pendingStore.get(row.phone))?.accountId).toBe(signer.lastCreated);
+    // after the bound with nothing landed: the record is forgotten and a retry creates
+    advance(PAST_THE_BOUND_MS);
+    const third = await provisionRecipients([row], deps);
+    expect(third.outcomes[0]?.status).toBe('created');
+    expect(third.outcomes[0]?.accountId).not.toBe(first.outcomes[0]?.accountId);
+    expect(horizon.submissions).toHaveLength(1);
+    expect(await pendingStore.get(row.phone)).toBeUndefined();
+  });
+
+  it('the transaction lands after the client timed out and after the first read-back: the re-run adopts it, nothing is created twice', async () => {
+    const { horizon, signer, deps, pendingStore, accountStore, advance } = setup();
+    horizon.nextErrors = [timeout('submitTransaction')];
+    // absent at the first probe (straight after the timeout), on chain from the next one
+    horizon.landLater = { accountId: () => signer.lastCreated, afterProbes: 1 };
+    const first = await provisionRecipients([row], deps);
+    expect(first.outcomes[0]?.status).toBe('uncertain');
+    const created = signer.lastCreated!;
+    advance(10_000);
     const second = await provisionRecipients([row], deps);
     expect(second.outcomes[0]?.status).toBe('created');
-    expect(horizon.submissions).toHaveLength(1);
+    expect(second.outcomes[0]?.accountId).toBe(created);
+    expect(second.outcomes[0]?.message).toContain('adopted from the pending record');
+    expect(await accountStore.get(row.phone)).toBe(created);
+    expect(await pendingStore.get(row.phone)).toBeUndefined();
+    expect(horizon.submissions).toHaveLength(0);
+    expect(second.sdpRows.map((r) => r.walletAddress)).toEqual([created]);
+  });
+
+  it('the creation transaction carries the 30 second time bound, not the adapter default of 120', async () => {
+    const { horizon, deps } = setup();
+    await provisionRecipients([row], deps);
+    const { TransactionBuilder } = await import('@stellar/stellar-sdk');
+    const tx = TransactionBuilder.fromXDR(horizon.submissions[0]!, NETWORK) as { timeBounds?: { maxTime: string } };
+    const maxTime = Number(tx.timeBounds?.maxTime);
+    const nowSec = Math.floor(Date.now() / 1000);
+    expect(maxTime - nowSec).toBeGreaterThan(20);
+    expect(maxTime - nowSec).toBeLessThanOrEqual(31);
+  });
+
+  it('a pending record written before expiresAt existed is held for the adapter default bound from its timestamp', async () => {
+    const { horizon, deps, pendingStore, advance } = setup();
+    await pendingStore.put(row.phone, { accountId: GONE, at: '2026-10-12T08:59:00Z' });
+    // 60 s old: inside 120 s + grace
+    const first = await provisionRecipients([row], deps);
+    expect(first.outcomes[0]?.status).toBe('uncertain');
+    expect(horizon.submissions).toHaveLength(0);
+    advance(80_000);
+    const second = await provisionRecipients([row], deps);
+    expect(second.outcomes[0]?.status).toBe('created');
   });
 
   it('a 5xx on submission is non-definitive too: the landed account is adopted', async () => {
@@ -215,7 +287,7 @@ describe('ambiguous submissions (timeout, 5xx, no result codes)', () => {
 
   it('a stale pending record whose account never landed is forgotten and a fresh creation runs', async () => {
     const { horizon, deps, pendingStore } = setup();
-    await pendingStore.put(row.phone, { accountId: GONE, at: '2026-10-10T00:00:00Z' });
+    await pendingStore.put(row.phone, { accountId: GONE, at: '2026-10-10T00:00:00Z', expiresAt: '2026-10-10T00:00:40Z' });
     const report = await provisionRecipients([row], deps);
     expect(report.outcomes[0]?.status).toBe('created');
     expect(report.outcomes[0]?.accountId).not.toBe(GONE);

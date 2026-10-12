@@ -36,6 +36,13 @@ export class FakeHorizon implements HorizonLike {
   landOnNextError?: () => string | undefined;
   /** loadAccount throws the mapped error for these accounts (Horizon unreadable for them). */
   failLoadFor = new Map<string, unknown>();
+  /**
+   * The late landing: the account named by `accountId()` is still absent
+   * for the next `afterProbes` loadAccount calls that ask for it, then it
+   * appears on the fake ledger, as a transaction that landed inside its
+   * time bound after the client had given up and already looked once.
+   */
+  landLater?: { accountId: () => string | undefined; afterProbes: number };
   private seq = 1;
 
   addAccount(id: string, opts: Partial<{ xlm: string; trustlines: Array<{ code: string; issuer: string }>; subentries: number; sponsoring: number; sponsored: number }> = {}) {
@@ -46,6 +53,14 @@ export class FakeHorizon implements HorizonLike {
     if (this.failAll) throw this.failAll;
     const forced = this.failLoadFor.get(accountId);
     if (forced) throw forced;
+    if (this.landLater && this.landLater.accountId() === accountId) {
+      if (this.landLater.afterProbes > 0) {
+        this.landLater.afterProbes -= 1;
+      } else {
+        this.addAccount(accountId, { xlm: '0.0000000', trustlines: [USDC], sponsored: 3 });
+        this.landLater = undefined;
+      }
+    }
     const a = this.accounts.get(accountId);
     if (!a) {
       const e = new Error('not found') as Error & { status: number };

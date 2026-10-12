@@ -8,10 +8,18 @@
  *   the account store's last-write-wins put cannot orphan an account;
  * - a non-definitive submission failure (deadline, Horizon 5xx, no result
  *   codes) is checked on chain before it is reported: an account that
- *   landed is mapped and returned; one that is absent fails as before;
- *   when the chain cannot be read the pending record is kept and the
- *   failure is reported, so the next dial checks the record first and
- *   never creates a second account for the number.
+ *   landed is mapped and returned; one that is absent is "not yet", not
+ *   "never": the transaction can still be included until its time bound
+ *   passes (the bridge sets 30 s, CREATION_TIMEOUT_SECONDS), so the
+ *   pending record is kept with that deadline and the dial answers E4. A
+ *   later dial adopts the account once it appears, answers E4 while the
+ *   bound still runs, and creates afresh only after the bound plus a grace
+ *   has passed with the account still absent. When the chain cannot be
+ *   read the record is kept the same way. This is the standard Stellar
+ *   handling of an unanswered submission (developers.stellar.org, Horizon
+ *   "Timeout" and "Error Handling" pages, read 12 October 2026): the
+ *   transaction either lands exactly once or times out; a second
+ *   submission for the same number is what must never start meanwhile.
  *
  * The pending record is the same store Deliverable 2 writes
  * (pending-creations.json in DATA_DIR), so the command line and the USSD
@@ -34,9 +42,9 @@ import {
   type Signer,
 } from 'stellar-ussd-sep10-adapter';
 import { spendableXlm, type HorizonAccountRecord } from '../provision/horizon.js';
-import type { PendingCreationStore } from '../provision/pending.js';
+import { CREATION_TIMEOUT_SECONDS, landingDeadline, pendingMayStillLand, type PendingCreationStore } from '../provision/pending.js';
 import { isNonDefinitiveSubmission } from '../provision/provision.js';
-import { CreationCappedError } from './errors.js';
+import { CreationCappedError, CreationPendingError } from './errors.js';
 
 export interface CreationCaps {
   /** Creation is refused while the sponsor can spend less XLM than this. */
@@ -62,6 +70,8 @@ export interface CreateOnDialDeps {
   /** Event sink: event names only, never a number. */
   log?: (line: string) => void;
   now?: () => number;
+  /** Time bound on the creation transaction, seconds; CREATION_TIMEOUT_SECONDS when omitted. */
+  creationTimeoutSeconds?: number;
 }
 
 export interface CreatedOnDial {
@@ -143,6 +153,11 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
         log('creation event=pendingUnreadable');
         throw new Error('a pending creation for this number could not be checked on chain');
       }
+      if (pendingMayStillLand(pending, now())) {
+        // not on chain yet, but the transaction can still be included
+        log('creation event=pendingStillBound');
+        throw new CreationPendingError(pending.accountId, pending.expiresAt ?? 'its time bound');
+      }
       await deps.pendingStore?.delete(msisdn);
     }
 
@@ -157,6 +172,7 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
         newAccountId,
         signer: deps.signer,
         asset: deps.asset,
+        timeoutSeconds: deps.creationTimeoutSeconds ?? CREATION_TIMEOUT_SECONDS,
       });
       await deps.store.put(msisdn, newAccountId);
       await deps.pendingStore?.delete(msisdn);
@@ -164,6 +180,7 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
       return { accountId: newAccountId, creationTxHash: result.hash, created: true };
     } catch (err) {
       if (isNonDefinitiveSubmission(err)) {
+        const expiresAt = landingDeadline(now(), deps.creationTimeoutSeconds ?? CREATION_TIMEOUT_SECONDS);
         const p = await probe(deps.horizon, newAccountId);
         if (p === 'exists') {
           await deps.store.put(msisdn, newAccountId);
@@ -172,11 +189,14 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
           log('creation event=landedAfterAmbiguousSubmission');
           return { accountId: newAccountId, created: true };
         }
+        // keep the pending record with the deadline: the next dial checks it first
+        await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date(now()).toISOString(), expiresAt });
         if (p === 'unknown') {
-          // keep the pending record: the next dial checks it first
           log('creation event=ambiguousUnreadable');
           throw err;
         }
+        log('creation event=ambiguousNotYetLanded');
+        throw new CreationPendingError(newAccountId, expiresAt);
       }
       await deps.pendingStore?.delete(msisdn);
       throw err;

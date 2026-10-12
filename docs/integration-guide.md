@@ -212,6 +212,21 @@ number with no account sees "No account found for this number. Dial again
 to set up." (E3). Set `false` when recipients must have passed your
 identity and consent steps before they can hold funds.
 
+A creation whose submission gets no definitive answer (the 8 second dial
+deadline passes, Horizon answers a 5xx or no result codes) is not treated
+as failed: the transaction can still be included until its time bound
+passes. The bridge sets a 30 second bound on every creation (the adapter's
+default is 120) and keeps a pending record for the number until the bound
+plus a 10 second grace has passed. Meanwhile a re-dial answers "Service
+unavailable. Please try again later." (E4) and creates nothing; once the
+account appears it is adopted; once the bound has passed with the account
+still absent, the next dial creates afresh. `npm run provision` follows
+the same rule and reports such a row as `uncertain` until the bound has
+passed. This is the standard Stellar handling of an unanswered submission:
+with a time bound the transaction either makes it into a ledger exactly
+once or times out (developers.stellar.org, Horizon API reference, "Error
+Handling" and the "Timeout" status code, read 12 October 2026).
+
 ### The account screen
 
 ```

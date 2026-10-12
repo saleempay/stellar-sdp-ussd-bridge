@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryAccountStore } from 'stellar-ussd-sep10-adapter';
 import { InMemoryPendingStore } from '../../src/provision/pending.js';
 import { createOnDial, withInFlightGuard } from '../../src/ussd/createOnDial.js';
-import { CreationCappedError } from '../../src/ussd/errors.js';
+import { CreationCappedError, CreationPendingError } from '../../src/ussd/errors.js';
 import { FakeHorizon, FakeSigner, NETWORK, SPONSOR, USDC, timeout } from './provisionFakes.js';
 
 const MSISDN = '+999738035311';
@@ -64,15 +64,55 @@ describe('createOnDial', () => {
     expect(f.horizon.submissions).toHaveLength(0);
   });
 
-  it('a timeout with nothing landed fails, maps nothing, and the next dial creates', async () => {
+  it('a timeout with nothing landed yet: E4 (pending), the record holds with the time bound, a re-dial inside the bound creates nothing, a re-dial after it creates', async () => {
     const f = setup();
     f.horizon.nextErrors = [timeout('submitTransaction')];
-    await expect(f.create(MSISDN)).rejects.toThrow(/did not answer/);
+    const err = await f.create(MSISDN).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CreationPendingError);
+    expect(f.logs).toContain('creation event=ambiguousNotYetLanded');
     expect(await f.store.get(MSISDN)).toBeUndefined();
-    expect(await f.pendingStore.get(MSISDN)).toBeUndefined();
+    const pending = await f.pendingStore.get(MSISDN);
+    expect(pending?.accountId).toBe(f.signer.lastCreated);
+    expect(pending?.expiresAt).toBe(new Date(Date.parse('2026-10-11T08:00:00Z') + 40_000).toISOString());
+    // the user re-dials within seconds: E4 again, no second creation
+    f.advance(5_000);
+    const again = await f.create(MSISDN).catch((e: unknown) => e);
+    expect(again).toBeInstanceOf(CreationPendingError);
+    expect(f.logs).toContain('creation event=pendingStillBound');
+    expect(f.horizon.submissions).toHaveLength(0);
+    expect((await f.pendingStore.get(MSISDN))?.accountId).toBe(pending?.accountId);
+    // after the bound with nothing landed: the retry creates
+    f.advance(40_000);
     const r = await f.create(MSISDN);
     expect(r.created).toBe(true);
+    expect(r.accountId).not.toBe(pending?.accountId);
     expect(f.horizon.submissions).toHaveLength(1);
+    expect(await f.pendingStore.get(MSISDN)).toBeUndefined();
+  });
+
+  it('the transaction lands after the client timed out and after the first read-back: the re-dial adopts it, nothing is created twice', async () => {
+    const f = setup();
+    f.horizon.nextErrors = [timeout('submitTransaction')];
+    f.horizon.landLater = { accountId: () => f.signer.lastCreated, afterProbes: 1 };
+    await expect(f.create(MSISDN)).rejects.toBeInstanceOf(CreationPendingError);
+    const created = f.signer.lastCreated!;
+    f.advance(6_000);
+    const r = await f.create(MSISDN);
+    expect(r.accountId).toBe(created);
+    expect(r.created).toBe(true);
+    expect(f.logs).toContain('creation event=adoptedPendingAccount');
+    expect(f.horizon.submissions).toHaveLength(0);
+    expect(await f.store.get(MSISDN)).toBe(created);
+    expect(await f.pendingStore.get(MSISDN)).toBeUndefined();
+  });
+
+  it('two sessions for one number straddling the busy screen: the second waits on the first, and a third after the pending window adopts or creates once', async () => {
+    const f = setup();
+    f.horizon.nextErrors = [timeout('submitTransaction')];
+    const [a, b] = await Promise.all([f.create(MSISDN).catch((e: unknown) => e), f.create(MSISDN).catch((e: unknown) => e)]);
+    expect(a).toBeInstanceOf(CreationPendingError);
+    expect(b).toBe(a);
+    expect(f.horizon.submissions).toHaveLength(0);
   });
 
   it('a timeout and an unreadable chain keep the pending record; the next dial adopts the landed account without a second creation', async () => {

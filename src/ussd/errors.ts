@@ -26,3 +26,19 @@ export class CreationCappedError extends Error {
     this.name = 'CreationCappedError';
   }
 }
+
+/**
+ * Creation on dial refused because an earlier creation for this number is
+ * still pending: its transaction can still be included until its time
+ * bound passes, and the account is not on chain yet. The machine answers
+ * E4 (service unavailable, try again later); a later dial adopts the
+ * account once it appears, or creates afresh once the bound has passed.
+ */
+export class CreationPendingError extends Error {
+  readonly code = 'CREATION_PENDING';
+  constructor(readonly accountId: string, readonly expiresAt: string) {
+    super(`a creation for this number is pending until ${expiresAt}`);
+    this.name = 'CreationPendingError';
+  }
+}
+

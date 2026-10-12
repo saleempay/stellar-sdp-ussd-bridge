@@ -44,7 +44,7 @@ import {
   type SessionStore,
   type UssdSession,
 } from 'stellar-ussd-sep10-adapter';
-import { AccountNotOnChainError, CreationCappedError, NoUsdcTrustlineError } from './errors.js';
+import { AccountNotOnChainError, CreationCappedError, CreationPendingError, NoUsdcTrustlineError } from './errors.js';
 import { SCREENS, type AccountView } from './screens.js';
 
 export interface BridgeMachineDeps {
@@ -190,6 +190,11 @@ async function transition(
             // E3, not E4: the service is up, this number is not served today
             log(`session=${session.sessionId} event=creationCapped reason=${err.reason}`);
             return SCREENS.endNoAccount();
+          }
+          if (err instanceof CreationPendingError) {
+            // E4: an earlier creation for this number may still land; try again later
+            log(`session=${session.sessionId} event=creationPending`);
+            return SCREENS.endServiceDown();
           }
           log(`session=${session.sessionId} event=accountCreateFailed code=${(err as { code?: string })?.code ?? (err as Error)?.name ?? 'unknown'}`);
           return SCREENS.endServiceDown();

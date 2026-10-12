@@ -56,7 +56,7 @@ import {
   UNDERFUNDED_RESULT_CODES,
 } from './errors.js';
 import { HorizonResponseError, spendableXlm, type HorizonAccountRecord } from './horizon.js';
-import type { PendingCreationStore } from './pending.js';
+import { CREATION_TIMEOUT_SECONDS, landingDeadline, pendingMayStillLand, type PendingCreationStore } from './pending.js';
 import { maskPhone, type InputRow, type ProvisionReport, type RowOutcome, type SdpRow } from './types.js';
 import { maskAccount } from '../sdp/facts.js';
 
@@ -73,6 +73,16 @@ export interface ProvisionDeps {
   networkPassphrase: string;
   /** Prefix for the SDP paymentID column, typically the input file stem. */
   paymentIdPrefix: string;
+  /**
+   * Time bound set on each creation transaction, seconds
+   * (CREATION_TIMEOUT_SECONDS when omitted). After an ambiguous
+   * submission the row stays `uncertain`, and no new creation for the
+   * number starts, until this bound plus a grace has passed; see
+   * pending.ts.
+   */
+  creationTimeoutSeconds?: number;
+  /** Clock, for tests. */
+  now?: () => number;
   /**
    * XLM the sponsor must be able to spend per new account with its
    * trustline. 1.5 XLM at the current base reserve (1.0 for the account,
@@ -287,6 +297,15 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
     let note: string | undefined;
 
     // A pending record from an earlier run names an account that may exist.
+    // Standard Stellar handling of an unanswered submission: the transaction
+    // may still be included until its time bound passes, and the same
+    // transaction cannot be applied twice, so nothing new is submitted for
+    // the number until the account appears or the bound has passed
+    // (developers.stellar.org, Horizon "Timeout" and "Error Handling"
+    // pages, read 12 October 2026: a timeout means Horizon does not know
+    // whether core discarded the transaction; with time bounds it either
+    // makes it onto the ledger exactly once or times out).
+    const nowMs = deps.now?.() ?? Date.now();
     const pending = await deps.pendingStore?.get(msisdn);
     if (pending) {
       const probe = await probeAccount(deps, pending.accountId);
@@ -296,7 +315,10 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
         note = `adopted from the pending record of ${pending.at}: the creation had landed; the transaction hash is not known`;
       } else if (probe === 'unknown') {
         return uncertain(base, pending.accountId, `the pending record of ${pending.at} names this account and Horizon could not be read to confirm it; reconcile or re-run when Horizon answers`);
+      } else if (pendingMayStillLand(pending, nowMs)) {
+        return uncertain(base, pending.accountId, `the creation recorded at ${pending.at} is not on chain yet but its transaction can still land until ${pending.expiresAt ?? 'its time bound passes'}; no new creation starts for this number before then; re-run after it`);
       } else {
+        // the time bound has passed and the account is absent: it did not land
         await deps.pendingStore?.delete(msisdn);
       }
     }
@@ -304,7 +326,7 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
     if (!adopted) {
       try {
         newAccountId = await deps.signer.createAccountKey();
-        await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date().toISOString() });
+        await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date(nowMs).toISOString() });
         const result = await createSponsoredAccount({
           horizon: deps.horizon,
           networkPassphrase: deps.networkPassphrase,
@@ -312,19 +334,28 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
           newAccountId,
           signer: deps.signer,
           asset: deps.asset,
+          timeoutSeconds: deps.creationTimeoutSeconds ?? CREATION_TIMEOUT_SECONDS,
         });
         base.txHash = result.hash;
         if (result.ledger !== undefined) base.ledger = result.ledger;
       } catch (err) {
         if (newAccountId !== undefined && isNonDefinitiveSubmission(err)) {
+          // The transaction was built no later than this moment, so its
+          // time bound ends no later than now plus the bound; the pending
+          // record holds until then plus the grace.
+          const expiresAt = landingDeadline(deps.now?.() ?? Date.now(), deps.creationTimeoutSeconds ?? CREATION_TIMEOUT_SECONDS);
           const probe = await probeAccount(deps, newAccountId);
           if (probe === 'exists') {
             adopted = true;
             note = `confirmed on chain after an ambiguous submission (${describe(err)}); the transaction hash is not known`;
-          } else if (probe === 'unknown') {
-            return uncertain(base, newAccountId, `ambiguous submission (${describe(err)}) and Horizon could not be read to confirm the account; reconcile or re-run when Horizon answers`);
+          } else {
+            await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date(nowMs).toISOString(), expiresAt });
+            if (probe === 'unknown') {
+              return uncertain(base, newAccountId, `ambiguous submission (${describe(err)}) and Horizon could not be read to confirm the account; reconcile or re-run when Horizon answers`);
+            }
+            // absent now is "not yet": the transaction can still land until expiresAt
+            return uncertain(base, newAccountId, `ambiguous submission (${describe(err)}); the account is not on chain yet but the transaction can still land until ${expiresAt}; no new creation starts for this number before then; re-run after it`);
           }
-          // absent: the creation did not land, so the row fails as before
         }
         if (!adopted) {
           if (newAccountId !== undefined) await deps.pendingStore?.delete(msisdn);
