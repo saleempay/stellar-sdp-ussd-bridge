@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryAccountStore, InMemoryPinStore, InMemorySessionStore, verifyPin, type GatewayStep } from 'stellar-ussd-sep10-adapter';
-import { AccountNotOnChainError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
+import { AccountNotOnChainError, CreationCappedError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, withInFlightGuard, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
 
-const MSISDN = '+254738035311';
+const MSISDN = '+999738035311';
 const ACCOUNT = 'G'.padEnd(56, 'Q');
 const PIN = '4729';
 const OTHER_PIN = '8351';
@@ -114,6 +114,26 @@ describe('entry state: account, no PIN (a Deliverable 2 recipient)', () => {
     expect((await f.pins.get(MSISDN))!.hash).toBe(before);
   });
 
+  it('two sessions in setup for one number: the first stored PIN is kept and the second session is asked to enter it', async () => {
+    const f = setup({ account: ACCOUNT, view: { balance: '0.0000000' } });
+    const a = f.dial('a');
+    const b = f.dial('b');
+    await a(); await a('1'); await a(PIN);
+    await b(); await b('1'); await b(OTHER_PIN);
+    expect((await a(PIN)).kind).toBe('end');
+    const stored = (await f.pins.get(MSISDN))!.hash;
+    expect(await verifyPin(PIN, stored)).toBe(true);
+    // B confirms its own PIN after A stored one: no replacement, enter-PIN screen instead
+    const bConfirm = await b(OTHER_PIN);
+    expect(bConfirm.text).toBe('Enter your PIN');
+    expect(bConfirm.kind).toBe('con');
+    expect((await f.pins.get(MSISDN))!.hash).toBe(stored);
+    expect(f.logs.some((l) => l.includes('session=b event=pinSetupRaced'))).toBe(true);
+    expect((await b(OTHER_PIN)).text).toBe('Wrong PIN. 2 attempts left\nEnter your PIN');
+    expect((await b(PIN)).kind).toBe('end');
+    expect((await f.pins.get(MSISDN))!.hash).toBe(stored);
+  });
+
   it('mismatch (A-5), bad format (A-3) and weak (A-4) re-prompt without storing anything', async () => {
     const f = setup({ account: ACCOUNT });
     const s = f.dial();
@@ -142,6 +162,31 @@ describe('entry state: no account, no PIN (first use)', () => {
     expect(final.text).toContain('Signed in as GQQQ..QQQQ');
   });
 
+  it('two overlapping sessions for one number share one creation: the second awaits the first (in-flight guard)', async () => {
+    const f = setup({ view: { balance: '0.0000000' } });
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    f.deps.createAccount = withInFlightGuard(async (m) => { calls += 1; await gate; await f.accounts.put(m, ACCOUNT); return { accountId: ACCOUNT, creationTxHash: 'ab'.repeat(32) }; });
+    // session A: PIN set, then 1 starts the creation, which is slow
+    const a = f.dial('a');
+    await a(); await a('1'); await a(PIN);
+    expect((await a(PIN)).text).toBe('PIN saved\n1. Create your account and continue');
+    const pendingA = a('1');
+    // session B for the same number while A's creation is still running: the PIN
+    // exists, the mapping does not, so B reaches the create step too
+    const b = f.dial('b');
+    await b();
+    expect((await b('1')).text).toBe('Enter your PIN');
+    expect((await b(PIN)).text).toBe('PIN accepted\n1. Create your account and continue');
+    const pendingB = b('1');
+    release();
+    expect((await pendingA).text).toBe('Account ready\nEnter your PIN');
+    expect((await pendingB).text).toBe('Account ready\nEnter your PIN');
+    expect(calls).toBe(1);
+    expect(await f.accounts.get(MSISDN)).toBe(ACCOUNT);
+  });
+
   it('with creation on dial off, E3 is shown and nothing is created', async () => {
     const f = setup({ createOnDial: false });
     const s = f.dial();
@@ -150,6 +195,17 @@ describe('entry state: no account, no PIN (first use)', () => {
     expect(e3.text).toBe('No account found for this number.\nDial again to set up.');
     expect(e3.kind).toBe('end');
     expect(await f.pins.get(MSISDN)).toBeUndefined();
+  });
+
+  it('a capped creation shows E3, not E4, and logs the reason', async () => {
+    const f = setup();
+    f.deps.createAccount = async () => { throw new CreationCappedError('rate', 'cap'); };
+    const s = f.dial();
+    await s(); await s('1'); await s(PIN); await s(PIN);
+    const e3 = await s('1');
+    expect(e3.text).toBe('No account found for this number.\nDial again to set up.');
+    expect(e3.kind).toBe('end');
+    expect(f.logs.some((l) => l.includes('event=creationCapped reason=rate'))).toBe(true);
   });
 
   it('creation failure shows E4', async () => {

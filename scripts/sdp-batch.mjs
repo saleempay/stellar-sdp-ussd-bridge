@@ -46,7 +46,8 @@ const account = accounts.find((a) => a.id === walletId) ?? accounts[0];
 const horizon = new FetchHorizon(TESTNET_HORIZON_URL, { timeoutMs: 20_000 });
 
 const d = await client.getDisbursement(disbursementId, walletId);
-const payments = await paymentsOf(client, disbursementId, walletId);
+// every page, and the count must equal the disbursement's rows
+const payments = await paymentsOf(client, disbursementId, walletId, d.total_payments);
 const total = totalAmount(payments);
 const onChain = await horizon.loadAccount(account.distribution_account_address);
 const usdc = onChain.balances.find((b) => b.asset_code === asset.code && b.asset_issuer === asset.issuer)?.balance ?? '0';
@@ -62,7 +63,7 @@ const dir = join('test-output', 'd4-batch', run);
 mkdirSync(dir, { recursive: true });
 const result = await runBatch(
   { client, horizon, sleep: (ms) => new Promise((r) => setTimeout(r, ms)), now: () => Date.now() },
-  { disbursementId, walletId, asset, timeoutMs, skipStart },
+  { disbursementId, walletId, asset, timeoutMs, skipStart, distributionAccount: account.distribution_account_address },
 );
 console.log(formatBatchReport(result));
 const after = await horizon.loadAccount(account.distribution_account_address);
@@ -73,4 +74,8 @@ const evidence = {
 };
 writeFileSync(join(dir, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`evidence written to ${dir}/evidence.json`);
-process.exit(result.timedOut || result.payments.some((p) => p.status !== 'SUCCESS') ? 1 : 0);
+// The point of the step is on-chain confirmation, so a payment whose
+// confirmation found a mismatch, or whose transaction is not successful
+// on Horizon, fails the run as a non-SUCCESS status does.
+const unconfirmed = result.payments.some((p) => p.confirmError !== undefined || p.successful === false);
+process.exit(result.timedOut || unconfirmed || result.payments.some((p) => p.status !== 'SUCCESS') ? 1 : 0);

@@ -224,6 +224,8 @@ export interface Disbursement {
   name: string;
   status: string;
   registration_contact_type?: string;
+  /** Payment rows of the disbursement (internal/data/disbursements.go:43). */
+  total_payments?: number;
   [key: string]: unknown;
 }
 
@@ -467,11 +469,30 @@ export class SdpTenantClient {
     return json<Paginated<Receiver>>(res);
   }
 
-  /** GET /payments, paginated. */
-  async listPayments(walletId?: string): Promise<Paginated<Payment>> {
+  /**
+   * GET /payments, one page. page_limit defaults to 20 and is capped at 100
+   * (validators/query_validator.go:23-24); there is no disbursement filter
+   * (internal/data/payments.go:69), so callers filter and must page.
+   */
+  /**
+   * GET /payments. `page` and `page_limit` (query_validator.go:29-30 at
+   * 7.0.0, page_limit at most 100, :93-94); `sort` is `created_at` or
+   * `updated_at` (internal/data/payments.go:70, AllowedPaymentSorts; the
+   * default is updated_at descending, :67) and `direction` is `asc` or
+   * `desc` (query_validator.go:40-44).
+   */
+  async listPayments(walletId?: string, page?: { page: number; pageLimit: number; sort?: 'created_at' | 'updated_at'; direction?: 'asc' | 'desc' }): Promise<Paginated<Payment>> {
+    const q = new URLSearchParams();
+    if (page) {
+      q.set('page', String(page.page));
+      q.set('page_limit', String(page.pageLimit));
+      if (page.sort) q.set('sort', page.sort);
+      if (page.direction) q.set('direction', page.direction);
+    }
+    const qs = page ? `?${q.toString()}` : '';
     const res = await send(this.fetchImpl, this.base, {
       method: 'GET',
-      path: '/payments',
+      path: `/payments${qs}`,
       headers: this.headers(this.walletHeader(walletId)),
     });
     return json<Paginated<Payment>>(res);

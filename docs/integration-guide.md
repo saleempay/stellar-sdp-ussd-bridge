@@ -36,6 +36,30 @@ the PIN policy, the session store and the gateway transport.
 See `docs/sdp-setup.md`: Docker runtime, `npm run sdp:accounts`,
 `npm run sdp:up`, the dashboard at `http://bridge.localhost:3000`.
 
+### The isolation boundary is the tenant, never the distribution account
+
+Design constraint for everything built on this bridge. Within one SDP
+tenant, distribution accounts scope what a caller can list, but they do
+not isolate receivers from direct payments. At 7.0.0 the receiver list
+is filtered by the scope rule (`internal/data/receivers.go:108-114`: the
+account the receiver was created under, or any account that has paid
+them), while a direct payment resolves the receiver by id with no scope
+filter (`internal/services/direct_payment_resolvers.go:365-371`) and
+checks the paying account's balance afterwards. In the retest recorded in
+`EVIDENCE.md` (Deliverable 1, "Retest: receiver scoping and batch status
+on 7.0.0") a payment from a second account of the same tenant to a
+receiver created under the first was refused by the balance check, not by
+scoping; had the second account held USDC, the payment would most likely
+have gone through and that account would then have gained list
+visibility of the receiver (phone number and wallet) under the scope
+rule's "has paid them" clause. Across tenants the receiver was not found
+(404).
+
+Therefore: map different clients, programmes or operators onto separate
+tenants, never onto distribution accounts of one tenant. A distribution
+account separates balances and listings for one operator; it does not
+keep one operator's recipients away from another operator's payments.
+
 ## 2. Provision recipients
 
 ```bash
@@ -53,10 +77,28 @@ writes the SDP file with the columns
 idempotent: run it again and it creates nothing, sends nothing and writes
 the same bytes (it prints the file's SHA-256). Rows that fail are reported
 one by one with a code (`invalid_phone`, `resolver_failure`,
-`sponsor_underfunded`, `trustline_failure`, `horizon_timeout`,
-`pin_input`); the other rows still succeed. The sponsor is a throwaway
+`sponsor_underfunded`, `trustline_failure`, `signer_unavailable`,
+`horizon_timeout`, `pin_input`); the other rows still succeed. The sponsor is a throwaway
 testnet account in `.env`; the run is refused up front when it cannot pay
 for every row.
+
+When any row failed or is uncertain, the SDP file is not written, because
+a file missing rows looks complete to the SDP. Fix and re-run (the
+successful rows are `unchanged` and cost nothing), or pass
+`--allow-partial` to write the rows that succeeded together with a
+sidecar, `<output>.partial.json`, naming the omitted input rows and their
+codes. `sdp:upload` reads that sidecar and refuses the file unless you
+pass `--accept-partial`.
+
+A creation whose submission gets no verdict from the network (a timeout,
+a Horizon 5xx, or no result codes) may still have landed. The command
+writes `data/pending-creations.json` (number, account) before each
+submission and, on such a failure, reads the account from Horizon before
+the row fails: found, the row is `created` and mapped; absent, the row
+fails as above; unreadable, the row is `uncertain` (`creation_uncertain`)
+with the account id, is left out of the SDP file, and its pending record
+is checked first by the next run, so the same number is never provisioned
+twice. Exit code 1 covers uncertain rows as it does failed ones.
 
 No PIN is set by provisioning. Recipients set their PIN on their first
 dial. The optional `pin` column exists only for the automated testnet run;
@@ -64,6 +106,16 @@ the command refuses it unless you pass `--allow-pin-column`, and a file
 with PINs must never be used outside testnet. See
 `docs/identity-binding.md` for what the bridge binds and what you must add
 (identity, consent, a real signer, protected stores).
+
+**Receive-only.** With the reference signer, the accounts this command
+creates are receive-only: their keys are forgotten when the command
+exits, so no later process in this repository can sign for them. They
+receive the SDP's payments and show them over USSD (sections 3 and 4).
+A mapped account that lacks a trustline is reported as
+`signer_unavailable` rather than repaired, and the sponsor's reserve in
+each account (about 1.5 XLM) cannot be reclaimed. SEP-10 and any outbound
+payment need a `Signer` you supply (`docs/identity-binding.md`,
+"Receive-only with the reference signer").
 
 ## 3. Run the USSD service
 
@@ -160,6 +212,24 @@ number with no account sees "No account found for this number. Dial again
 to set up." (E3). Set `false` when recipients must have passed your
 identity and consent steps before they can hold funds.
 
+A creation whose submission gets no definitive answer (the 8 second dial
+deadline passes, Horizon answers a 5xx or no result codes) is not treated
+as failed: the transaction can still be included until its time bound
+passes. The bridge sets a 30 second bound on every creation (the adapter's
+default is 120) and keeps a pending record for the number until the bound
+plus a 10 second grace has passed. Meanwhile a re-dial answers "Service
+unavailable. Please try again later." (E4) and creates nothing; once the
+account appears it is adopted; once the bound has passed with the account
+still absent, the next dial creates afresh. `npm run provision` follows
+the same rule and reports such a row as `uncertain` until the bound has
+passed. The hourly cap (`USSD_CREATE_MAX_PER_HOUR`) reserves its slot
+before the submission, so dials from different numbers that arrive
+together cannot all pass it; the count lives in the service process and
+starts at zero when the process restarts. This is the standard Stellar handling of an unanswered submission:
+with a time bound the transaction either makes it into a ledger exactly
+once or times out (developers.stellar.org, Horizon API reference, "Error
+Handling" and the "Timeout" status code, read 12 October 2026).
+
 ### The account screen
 
 ```
@@ -187,7 +257,9 @@ The PIN policy is the adapter's: four digits, a weak list at setup, three
 attempts then a 15 minute lockout, scrypt hashes in `data/pins.json`, the
 PIN never stored, logged or shown. "PIN saved" is shown only by the step
 that stored the hash; "PIN accepted" only after a verification. A stored
-PIN is never replaced by the service.
+PIN is never replaced by the service. The PIN gates the account screen;
+the service signs nothing, and with the reference signer nothing can be
+signed for a provisioned account (section 2, "Receive-only").
 
 ### Timing
 
@@ -197,7 +269,8 @@ and the real answer is served from its cache to the gateway's retry. The
 sandbox ends a session after roughly 30 to 60 seconds without input
 (measured in the adapter's evidence, not quoted from documentation). PIN
 screens are local; the account screen is two reads under 2.5 seconds;
-creation on dial is one Horizon submission (about 5 seconds measured).
+creation on dial is one Horizon submission (about 5 seconds measured),
+preceded by one read of the sponsor's balance for the cap.
 
 ### Callback security
 
@@ -230,5 +303,7 @@ next dial. The run is recorded under `test-output/d4-batch/`.
 
 ## What is out of scope
 
-Mainnet; production signing or custody; cash-out; SIM Toolkit; assets
-other than USDC; SDP registration over USSD; changes to the SDP.
+Mainnet; production signing or custody; a persistent signer (the
+reference signer makes provisioned accounts receive-only); cash-out; SIM
+Toolkit; assets other than USDC; SDP registration over USSD; changes to
+the SDP.

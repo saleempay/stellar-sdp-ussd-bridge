@@ -36,9 +36,10 @@ budget (156 characters of text after the gateway prefix).
 | Id | Note |
 |---|---|
 | N-1 | Amounts are shown with two decimals by cutting the chain value (seven decimals), never rounding up: 12.999 shows 12.99. Dates are the UTC date of the payment, day without leading zero and the three-letter English month. |
-| N-2 | E3 (No account found for this number. Dial again to set up.) is shown when the account mapped to the number does not exist on the network, or when the number has no account and account creation on dial is switched off (`USSD_CREATE_ON_DIAL=false`, the operator-provisioned posture). In the demonstration build creation on dial is on. |
+| N-2 | E3 (No account found for this number. Dial again to set up.) is shown when the account mapped to the number does not exist on the network; when the number has no account and account creation on dial is off (the default, `USSD_CREATE_ON_DIAL` unset or not `true`, the operator-provisioned posture); and, with creation on, when a creation cap is hit (the sponsor's spendable XLM below `USSD_CREATE_MIN_SPONSOR_XLM`, or `USSD_CREATE_MAX_PER_HOUR` creations already in the last hour). The demonstration build sets creation on dial to true explicitly. |
 | N-3 | E4 (Service unavailable. Please try again later.) covers every failure to read the account from Horizon within the time budget and a failed account creation on dial. |
 | N-4 | The "Last received" line considers the newest 200 operations of the account; an account whose last 200 operations hold no incoming USDC payment shows A-1. |
+| N-5 | The service signs nothing. With the reference signer, accounts provisioned by the bridge (Deliverable 2) are receive-only: the PIN gates the account screen, and no screen offers an action that needs the account's signature. |
 
 ## Already notified in the walkthrough itself
 

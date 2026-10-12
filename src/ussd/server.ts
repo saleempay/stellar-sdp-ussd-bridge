@@ -4,7 +4,9 @@
  * exactly one of `machine` or `handle`), the
  * adapter's gateway adapter, session store and PIN store, the bridge's
  * account view over Horizon, and sponsored creation on dial through the
- * adapter's resolveOrCreateAccount with the Deliverable 2 sponsor.
+ * bridge's createOnDial (one creation in flight per number, an on-chain
+ * check before an ambiguous failure is reported) with the Deliverable 2
+ * sponsor.
  */
 import {
   AfricasTalkingGateway,
@@ -16,7 +18,6 @@ import {
   SESSION_LEG_TIMEOUT_MS,
   createUssdRequestListener,
   parseCidrList,
-  resolveOrCreateAccount,
   type AccountStore,
   type GatewayStep,
   type PinStore,
@@ -24,8 +25,10 @@ import {
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { FetchHorizon } from '../provision/horizon.js';
+import { InMemoryPendingStore, JsonFilePendingStore, type PendingCreationStore } from '../provision/pending.js';
 import { TESTNET_HORIZON_URL, TESTNET_NETWORK_PASSPHRASE, TESTNET_USDC_ISSUER, USDC_CODE } from '../sdp/facts.js';
 import { loadAccountView } from './accountView.js';
+import { DEFAULT_CREATION_CAPS, createOnDial, type CreationCaps } from './createOnDial.js';
 import { handleBridgeStep, type BridgeMachineDeps } from './machine.js';
 
 export interface UssdServerConfig {
@@ -40,6 +43,8 @@ export interface UssdServerConfig {
   asset?: { code: string; issuer: string };
   /** Sponsor secret for creation on dial; required when createOnDial is true. */
   sponsorSecretKey?: string;
+  /** Creation on dial caps; DEFAULT_CREATION_CAPS when omitted. */
+  creationCaps?: CreationCaps;
   legTimeoutMs?: number;
   sessionTtlMs?: number;
   log?: (line: string) => void;
@@ -50,8 +55,21 @@ export interface UssdServer {
   machine: BridgeMachineDeps;
 }
 
+/** A positive number from the environment, or the default; anything else is refused. */
+function positiveNumber(name: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) throw new Error(`${name} must be a non-negative number`);
+  return n;
+}
+
 export function ussdConfigFromEnv(env: Record<string, string | undefined>): UssdServerConfig {
-  const createOnDial = (env.USSD_CREATE_ON_DIAL ?? 'true').toLowerCase() !== 'false';
+  // fail closed: creation on dial is off unless the environment says true
+  const createOnDial = (env.USSD_CREATE_ON_DIAL ?? '').trim().toLowerCase() === 'true';
+  const creationCaps: CreationCaps = {
+    minSponsorXlm: positiveNumber('USSD_CREATE_MIN_SPONSOR_XLM', env.USSD_CREATE_MIN_SPONSOR_XLM, DEFAULT_CREATION_CAPS.minSponsorXlm),
+    maxPerHour: positiveNumber('USSD_CREATE_MAX_PER_HOUR', env.USSD_CREATE_MAX_PER_HOUR, DEFAULT_CREATION_CAPS.maxPerHour),
+  };
   return {
     callbackPath: env.USSD_CALLBACK_PATH ?? '',
     allowedCidrs: env.USSD_ALLOWED_CIDRS,
@@ -62,6 +80,7 @@ export function ussdConfigFromEnv(env: Record<string, string | undefined>): Ussd
     networkPassphrase: env.NETWORK_PASSPHRASE,
     asset: { code: env.ASSET_CODE || USDC_CODE, issuer: env.ASSET_ISSUER || TESTNET_USDC_ISSUER },
     sponsorSecretKey: env.SPONSOR_SECRET_KEY,
+    creationCaps,
     sessionTtlMs: env.USSD_SESSION_TTL_MS ? Number(env.USSD_SESSION_TTL_MS) : undefined,
   };
 }
@@ -88,8 +107,11 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
     const sponsorPublicKey = signer.importSecret(cfg.sponsorSecretKey);
     // creation uses a longer deadline than a read: one Horizon submission
     const creationHorizon = new FetchHorizon(cfg.horizonUrl ?? TESTNET_HORIZON_URL, { timeoutMs: 8_000 });
+    // the same pending store the command line writes (pending.ts)
+    const pendingStore: PendingCreationStore = cfg.dataDir ? new JsonFilePendingStore(join(cfg.dataDir, 'pending-creations.json')) : new InMemoryPendingStore();
+    const create = createOnDial({ store: accounts, signer, horizon: creationHorizon, networkPassphrase, sponsorPublicKey, asset, pendingStore, caps: cfg.creationCaps ?? DEFAULT_CREATION_CAPS, log });
     createAccount = async (msisdn) => {
-      const r = await resolveOrCreateAccount({ store: accounts, signer, horizon: creationHorizon, networkPassphrase, sponsorPublicKey, asset }, msisdn);
+      const r = await create(msisdn);
       return r.creationTxHash ? { accountId: r.accountId, creationTxHash: r.creationTxHash } : { accountId: r.accountId };
     };
   }

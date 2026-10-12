@@ -12,7 +12,7 @@
 export const DEFAULT_RESOLVERS = ['1.1.1.1', '8.8.8.8'] as const;
 
 /** Placeholder MSISDN for the probe; the welcome step never acts on it. */
-export const PROBE_MSISDN = '+254700000000';
+export const PROBE_MSISDN = '+999700000000';
 
 export const SCREEN_ONE_PREFIX = 'CON Saleem';
 

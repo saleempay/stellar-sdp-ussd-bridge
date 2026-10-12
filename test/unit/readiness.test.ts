@@ -5,11 +5,11 @@ import { TESTNET_USDC_ISSUER } from '../../src/sdp/facts.js';
 import { fakeFetch, type Recorded } from './helpers.js';
 
 /** An in-memory SDP: enough state to exercise every readiness step. */
-function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; isDefault?: boolean; invitationsOff?: boolean; walletEnabled?: boolean; usdcIssuer?: string; noUserManaged?: boolean } = {}) {
+function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; tenantStatus?: string; noDistributionAccount?: boolean; isDefault?: boolean; invitationsOff?: boolean; walletEnabled?: boolean; usdcIssuer?: string; noUserManaged?: boolean; otherUserManagedName?: string } = {}) {
   const state = {
     apiHealthCallsLeft: opts.apiDown ?? 0,
     tenant: opts.tenantExists
-      ? ({ id: 't1', name: 'bridge', status: 'TENANT_ACTIVATED', is_default: opts.isDefault ?? false, base_url: null, sdp_ui_base_url: null, distribution_account_address: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW', distribution_account_type: 'DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT', distribution_account_status: 'ACTIVE' } as Tenant)
+      ? ({ id: 't1', name: 'bridge', status: opts.tenantStatus ?? 'TENANT_ACTIVATED', is_default: opts.isDefault ?? false, base_url: null, sdp_ui_base_url: null, distribution_account_address: opts.noDistributionAccount ? null : 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW', distribution_account_type: 'DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT', distribution_account_status: 'ACTIVE' } as Tenant)
       : null,
     invitationsOff: opts.invitationsOff ?? false,
     walletEnabled: opts.walletEnabled ?? false,
@@ -35,7 +35,7 @@ function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; isDefault?: b
     if (p === '/reset-password') { const b = JSON.parse(r.body!); const email = [...state.resetTokens.entries()].find(([, t]) => t === b.reset_token)?.[0]; if (!email) return { status: 400, body: { error: 'Invalid reset password token.' } }; state.passwords.set(email, b.password); state.resetTokens.delete(email); return { status: 200 }; }
     if (p === '/organization' && r.method === 'GET') return { status: 200, body: { name: 'Org', receiver_invitations_disabled: state.invitationsOff } };
     if (p === '/organization' && r.method === 'PATCH') { state.invitationsOff = JSON.parse(r.form!.data!.value).receiver_invitations_disabled === true; return { status: 200, body: { message: 'ok' } }; }
-    if (p === '/wallets' && r.method === 'GET') return { status: 200, body: opts.noUserManaged ? [] : [{ id: 'w-um', name: 'User Managed Wallet', enabled: state.walletEnabled, user_managed: true }] };
+    if (p === '/wallets' && r.method === 'GET') return { status: 200, body: opts.noUserManaged ? [] : [{ id: 'w-um', name: opts.otherUserManagedName ?? 'User Managed Wallet', enabled: state.walletEnabled, user_managed: true }] };
     if (p === '/wallets/w-um' && r.method === 'PATCH') { state.walletEnabled = JSON.parse(r.body!).enabled; return { status: 200, body: { id: 'w-um', name: 'User Managed Wallet', enabled: state.walletEnabled } }; }
     if (p === '/assets') return { status: 200, body: [{ id: 'a-xlm', code: 'XLM', issuer: '' }, { id: 'a-usdc', code: 'USDC', issuer: state.usdcIssuer }] };
     return undefined;
@@ -125,6 +125,15 @@ describe('provisionTenant', () => {
     expect(err.step).toBe('user managed wallet');
   });
 
+  it('fails when the named wallet is absent instead of enabling whichever user managed wallet comes first', async () => {
+    const { deps, calls } = fakeSdp({ otherUserManagedName: 'Some Other Wallet' });
+    const err = (await provisionTenant(cfg, deps).catch((e: unknown) => e)) as ReadinessError;
+    expect(err.step).toBe('user managed wallet');
+    expect(err.message).toContain('"User Managed Wallet"');
+    expect(err.message).toContain('"Some Other Wallet"');
+    expect(calls.some((c) => c.method === 'PATCH' && c.url.includes('/wallets/'))).toBe(false);
+  });
+
   it('never carries the login password into results or errors', async () => {
     const { deps } = fakeSdp({ noUserManaged: true });
     const err = (await provisionTenant(cfg, deps).catch((e: unknown) => e)) as ReadinessError;
@@ -132,6 +141,34 @@ describe('provisionTenant', () => {
     expect(text).not.toContain('pw-never-printed');
     const { deps: ok } = fakeSdp();
     expect(formatReport(await provisionTenant(cfg, ok))).not.toContain('pw-never-printed');
+  });
+
+  it('refuses an existing tenant whose status is not usable, naming the status and the usable set', async () => {
+    for (const status of ['TENANT_CREATED', 'TENANT_DEACTIVATED']) {
+      const { deps, calls } = fakeSdp({ tenantExists: true, tenantStatus: status });
+      const err = (await provisionTenant(cfg, deps).catch((e: unknown) => e)) as ReadinessError;
+      expect(err).toBeInstanceOf(ReadinessError);
+      expect(err.step).toBe('tenant exists');
+      expect(err.message).toContain(status);
+      expect(err.message).toContain('TENANT_PROVISIONED, TENANT_ACTIVATED');
+      // nothing after the tenant step ran: no login, no organisation patch
+      expect(calls.some((c) => c.url.endsWith('/login'))).toBe(false);
+    }
+  });
+
+  it('accepts an existing tenant in either usable status', async () => {
+    for (const status of ['TENANT_PROVISIONED', 'TENANT_ACTIVATED']) {
+      const { deps } = fakeSdp({ tenantExists: true, tenantStatus: status });
+      const results = await provisionTenant(cfg, deps);
+      expect(results.find((r) => r.step === 'tenant exists')?.outcome).toBe('already');
+    }
+  });
+
+  it('refuses an existing tenant with no distribution account address', async () => {
+    const { deps } = fakeSdp({ tenantExists: true, noDistributionAccount: true });
+    const err = (await provisionTenant(cfg, deps).catch((e: unknown) => e)) as ReadinessError;
+    expect(err.step).toBe('tenant exists');
+    expect(err.message).toContain('no distribution account address');
   });
 
   it('masks the distribution account in the tenant step detail', async () => {
