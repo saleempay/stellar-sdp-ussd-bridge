@@ -1,8 +1,8 @@
 # Period report: Stellar Instaward Application 2 (progress, 12 October 2026)
 
 Prepared for the Chapter Lead by 5 Lanes Limited (Saleem) as a progress
-report ahead of the merges. Everything in it is true as of 12 October
-2026. Plain English; every claim links to a file in this repository, to
+report after the merges of 12 October. Everything in it is true as of
+12 October 2026, evening. Plain English; every claim links to a file in this repository, to
 GitHub, or to the Stellar test network.
 
 ## Period and start
@@ -25,47 +25,60 @@ disbursement file, and lets each recipient see what arrived over USSD.
 Code, scripts and guides are public under MIT at
 [github.com/saleempay/stellar-sdp-ussd-bridge](https://github.com/saleempay/stellar-sdp-ussd-bridge),
 with the evidence record in
-[`EVIDENCE.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/d5-review-fixes/EVIDENCE.md)
+[`EVIDENCE.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/main/EVIDENCE.md)
 and the checklist in
-[`docs/instaward-evidence-package.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/d5-review-fixes/docs/instaward-evidence-package.md).
+[`docs/instaward-evidence-package.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/main/docs/instaward-evidence-package.md).
 
 | Deliverable | State on 12 October | Evidence |
 |---|---|---|
-| 1. SDP 7.0.0 testnet tenant for basic-phone recipients | Built; reviewed; fixes awaiting approval ([pull request #1](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/1)) | one-command setup on the published 7.0.0 images; dashboard screenshots of the USDC asset, invitations off and the wallet-address contact type; the scoping and status retest |
-| 2. Recipient provisioning bridge | Built; reviewed; fixes awaiting approval ([pull request #2](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/2)) | five accounts created with trustlines in one sponsored transaction each, hashes on stellar.expert; the disbursement file; a second run that changes nothing; the file accepted by the SDP |
-| 3. USSD receive and balance view | Built; reviewed; fixes awaiting approval ([pull request #3](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/3)) | the walkthrough screens word for word; live session sets on the sandbox, one passed by the automated harness; a 27 second video of a first-use session with the PIN blurred |
-| 4. End-to-end batch and evidence package | Built; reviewed; fixes awaiting approval ([pull request #4](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/4)) | 20 USDC from Circle's testnet faucet; the batch of five payments completed in 46 seconds, each confirmed on Horizon; the five recipients' USSD sessions after the batch; the integration guide verified from a clean clone; the evidence package |
+| 1. SDP 7.0.0 testnet tenant for basic-phone recipients | Built, reviewed, fixed and merged into main on 12 October ([pull request #1](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/1), merge commit `70d0117`) | one-command setup on the published 7.0.0 images; dashboard screenshots of the USDC asset, invitations off and the wallet-address contact type; the scoping and status retest |
+| 2. Recipient provisioning bridge | Built, reviewed, fixed and merged on 12 October ([pull request #2](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/2), merge commit `a03e8c0`) | five accounts created with trustlines in one sponsored transaction each, hashes on stellar.expert; the disbursement file; a second run that changes nothing; the file accepted by the SDP |
+| 3. USSD receive and balance view | Built, reviewed, fixed and merged on 12 October ([pull request #3](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/3), merge commit `e60bbda`) | the walkthrough screens word for word; live session sets on the sandbox, one passed by the automated harness; a 27 second video of a first-use session with the PIN blurred |
+| 4. End-to-end batch and evidence package | Built, reviewed, fixed and merged on 12 October ([pull request #4](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/4), merge commit `c4f5734`) | 20 USDC from Circle's testnet faucet; the batch of five payments completed in 46 seconds, each confirmed on Horizon; the five recipients' USSD sessions after the batch; the integration guide verified from a clean clone; the evidence package |
 
 ## Review and merge state
 
 - **Reviewed.** Ismael Mbouna (ismo90), the build lead, reviewed pull
   requests 1 to 4 on 10 October: four reviews and 22 inline comments,
   each checked against the SDP source at 7.0.0.
-- **Answered.** His findings are answered in
+- **Answered.** His findings were answered in
   [pull request #5](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/5),
   one commit per finding, each with a regression test, under the rulings
   of 11 October. On 12 October he verified the fix round against the same
-  method and found every finding closed except one, which is to be fixed
-  before he approves: an account creation whose submission times out on
-  the client side may still land on the network within the transaction's
-  120 second time bound, so a re-run or re-dial inside that window could
-  create a second account. Three minor points can follow. Pull request #5
-  is awaiting his approval after that fix.
-- **Nothing is merged yet.** The four pull requests are open, each built
-  on the one before it (#1 on main, #2 on #1, #3 on #2, #4 on #3), with
-  #5 into #4, so they merge in order once approved. Every one passes the
-  automated checks (install, typecheck, offline tests, secret scan).
-  Merge is planned by 16 October.
+  method. The last open finding, an account creation whose submission
+  times out on the client side but may still land within the
+  transaction's time bound, was closed at commit `9c8fee5` (a 30 second
+  time bound on every creation, a pending record kept until the bound
+  plus a grace period has passed, the hourly cap reserving its slot before
+  the submission), and he verified that commit.
+- **Approved.** Ismael approved pull requests #2, #3, #4 and #5 on
+  12 October (#5 at `9c8fee5`), and #1 the same morning. Two of his
+  approvals were later dismissed by the repository's stale-approval rule,
+  which drops an approval when the base branch of the pull request
+  moves: the approval of #4 when #5 merged into its base, and the
+  approval of #1 when #2 merged into its base. Ramy Soliman (rasoliman)
+  approved #5, #3 and #2 that afternoon, approved #4 again after the
+  dismissal, and approved #1 at 17:24 UTC; #1 was merged on his approval.
+- **Merged.** In order, all on 12 October (UTC): #5 into
+  d4-batch-evidence at 17:20, merge commit `c3ad1f9`; #4 into
+  d3-ussd-balance-view at 17:22, `c4f5734`; #3 into
+  d2-provisioning-bridge at 17:23, `e60bbda`; #2 into
+  d1-sdp-testnet-tenant at 17:24, `a03e8c0`; #1 into main at 17:25,
+  `70d0117`. main now holds every deliverable with the fixes of #5. A
+  GitHub incident affecting Actions, Pull Requests and Issues that
+  afternoon delayed the display of pull request states; the merges
+  completed in that order.
 - **The adapter (Application 1).** The one change the bridge needed on
   the adapter, [pull request #15](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/15),
   was approved by Ismael and merged on 7 October. It was merged as a
   merge commit with GitHub's default message rather than the agreed
   squash, so a short note recording what happened and why nothing needs
   reverting was opened as
-  [pull request #17](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/17)
-  (approved by Ismael on 7 October, not yet merged). The bridge pins
-  the adapter to the merge commit, `4c235f87`, which has the same content
-  as the approved commit (`EVIDENCE.md`, "Deliverable 4, part 4").
+  [pull request #17](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/17),
+  approved by Ismael on 7 October and merged on 12 October as `03b50c9`.
+  The bridge pins the adapter to the merge commit, `4c235f87`, which has
+  the same content as the approved commit (`EVIDENCE.md`, "Deliverable 4,
+  part 4").
 
 ## Evidence rows
 
@@ -115,29 +128,28 @@ balance on the ledger now equals the amount in the file.
    "PIN saved / 1. Create your account and continue" and "Account ready".
    Eleven small additions (error and edge screens the walkthrough does not
    cover) are listed with their exact text in
-   `docs/walkthrough-deviations.md`. The written notice to Africa's
-   Talking that this requires before any production use is drafted in
-   `docs/africas-talking-walkthrough-notice-v1.md`, for Ramy Soliman to
-   send.
+   `docs/walkthrough-deviations.md`. The written notice this requires
+   before any production use (the deviation, the eleven additions and
+   the closing line of the account and About screens) was sent to
+   Africa's Talking by Ramy Soliman on 12 October 2026, and Africa's
+   Talking approved the change request the same day (`EVIDENCE.md`,
+   "2026-10-12: Merges and Africa's Talking approval").
 3. **Adapter pull request.** The bridge reuses Application 1's adapter by
    import. One optional field was needed on its HTTP listener (an
    injectable step handler), proposed as adapter pull request #15. The
    reviewer requested changes (a cache eviction case for custom handlers,
    documentation and tests); the fix round was completed and the pull
    request approved and merged on 7 October (see "Review and merge
-   state" for the merge message and the note in #17). The bridge pins the
-   adapter to the merge commit.
+   state" for the merge message and the note in #17, merged on
+   12 October). The bridge pins the adapter to the merge commit.
 
 ## What remains
 
 | Item | Date |
 |---|---|
-| Close the one open finding on pull request #5 (the creation time bound) with a regression test, then Ismael's approval | 14 October |
-| Merge the bridge's pull requests in order, #1, #2, #3, #4 with the fixes of #5 | by 16 October |
 | The demo video cut of the five USSD sessions after the batch, from the sessions captured on 11 October | by 16 October |
-| Merge of the adapter's note pull request #17 | by 16 October |
-| Send the written notice to Africa's Talking on the walkthrough deviation and additions (drafted; Ramy Soliman's step) | by 16 October |
 | Close of the statement-of-work window | 3 November |
 
-Four days remain to the planned completion date of 16 October and 22 to
-the end of the statement-of-work window on 3 November.
+Everything else in the statement of work is delivered and merged. Four
+days remain to the planned completion date of 16 October and 22 to the
+end of the statement-of-work window on 3 November.

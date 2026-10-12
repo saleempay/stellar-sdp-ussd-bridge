@@ -149,6 +149,20 @@ was still dialled on the previously saved hostname at 07:20 and 07:23
 hostname at 07:28:52. After saving, make a test dial and read the Error
 Message in USSD, Sessions, Details: it names the host the gateway used.
 
+Africa's Talking stated on 12 October 2026 that a callback change takes
+about 5 minutes to take effect, on the sandbox and in production alike.
+After a save, wait that long before the test dial, and do not save again
+inside the window: a second save restarts it (the 11 October dials at
+07:20 and 07:23 fell inside the window of the 07:17 save).
+
+Africa's Talking also stated on 12 October 2026 that its USSD callbacks
+come from three source addresses: 18.133.205.228, 35.177.236.113 and
+3.8.44.1 (the 11 October record shows the first of them). They are the
+documented default of `AT_CALLBACK_ALLOWLIST` in `.env.example`, not yet
+enforced by the service; a later change rejects, and logs, every other
+source address. Until then `USSD_ALLOWED_CIDRS` can carry the three as
+`/32` entries.
+
 ### Tunnel modes and a fixed hostname
 
 | `USSD_TUNNEL_MODE` | What runs | Hostname |
@@ -275,9 +289,10 @@ preceded by one read of the sponsor's balance for the cap.
 ### Callback security
 
 The callback path is a capability credential: long, random, in `.env`
-only, shown masked. `USSD_ALLOWED_CIDRS` adds an IP allowlist when your
-gateway publishes its egress ranges (Africa's Talking does not sign
-callbacks). Session records keep PIN positions masked (`####`).
+only, shown masked. `USSD_ALLOWED_CIDRS` adds an IP allowlist from your
+gateway's source addresses (Africa's Talking does not sign callbacks; the
+three addresses it stated on 12 October 2026 are listed under "Run the
+USSD service" above). Session records keep PIN positions masked (`####`).
 
 ## 4. Fund the distribution account and start the batch
 

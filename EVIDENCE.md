@@ -890,3 +890,57 @@ and removed from the 7 October entry (Deliverable 4, part 2) by ruling of
 
 Suite, typecheck and secret scan: recorded in the pull request that
 carries this entry.
+
+## 2026-10-12: Merges and Africa's Talking approval
+
+### What this entry records, in plain language
+
+The five pull requests of this sprint were merged on 12 October 2026,
+in order, after review and approval; and Africa's Talking approved, the
+same day, the written change request on the USSD menu that the service
+order requires before production.
+
+### Merges (12 October 2026, UTC)
+
+| Pull request | Into | Time | Merge commit |
+|---|---|---|---|
+| #5 D5: review fixes for pull requests 1 to 4 | d4-batch-evidence | 17:20 | `c3ad1f9` |
+| #4 D4: end-to-end batch and evidence package | d3-ussd-balance-view | 17:22 | `c4f5734` |
+| #3 D3: USSD receive and balance view | d2-provisioning-bridge | 17:23 | `e60bbda` |
+| #2 D2: recipient provisioning bridge | d1-sdp-testnet-tenant | 17:24 | `a03e8c0` |
+| #1 D1: SDP 7.0.0 testnet tenant | main | 17:25 | `70d0117` |
+
+main at `70d0117` holds every deliverable with the fixes of #5; the last
+D5 commit, `9c8fee5`, is an ancestor of it. The adapter's note, pull
+request #17 of `saleempay/stellar-ussd-sep10-adapter`, was merged the
+same day as `03b50c9`; the bridge's submodule pin (`4c235f87`) is
+unchanged.
+
+Approvals: ismo90 approved #2, #3, #4 and #5 on 12 October (#5 at
+`9c8fee5`, after verifying the last finding's fix), and #1 the same
+morning. The repository's stale-approval rule dismisses an approval when
+the pull request's base branch moves, so his approval of #4 was
+dismissed when #5 merged into d4-batch-evidence, and his approval of #1
+when #2 merged into d1-sdp-testnet-tenant. rasoliman approved #5, #3 and
+#2 that afternoon, approved #4 again after the dismissal, and approved #1
+at 17:24 UTC; #1 was merged on his approval. A GitHub incident affecting
+Actions, Pull Requests and Issues that afternoon delayed the display of
+pull request states; the merges completed in the order above.
+
+### Africa's Talking approval (12 October 2026)
+
+The written notice on the walkthrough (deviation D-1, additions A-1 to
+A-11, and the closing line of screens 7 and 8) was sent on 12 October
+2026 and Africa's Talking approved the change request the same day. In
+the same reply Africa's Talking stated that a callback change takes
+about 5 minutes to take effect on the sandbox and in production alike;
+that its USSD callbacks come from three addresses, 18.133.205.228,
+35.177.236.113 and 3.8.44.1 (the 11 October record shows the first);
+that roaming works as in Kenya; and that the production service code is
+mapped after payment. The integration guide and `.env.example` record
+the first two in the pull request that carries this entry.
+
+### Offline checks
+
+Suite, typecheck and secret scan: recorded in the pull request that
+carries this entry.
