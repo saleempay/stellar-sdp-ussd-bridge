@@ -15,7 +15,7 @@ const R2 = 'G'.padEnd(56, '2');
  * of disbursement d1 sit on different pages behind rows of other
  * disbursements, so a one-page reader would see only part of the batch.
  */
-function fakeWorld(opts: { fail?: boolean; stuck?: boolean; pageSize?: number; totalPayments?: number; wrong?: 'recipient' | 'amount' | 'source' | 'failed' } = {}) {
+function fakeWorld(opts: { fail?: boolean; stuck?: boolean; pageSize?: number; totalPayments?: number; wrong?: 'recipient' | 'amount' | 'source' | 'failed'; duplicateAcrossPages?: boolean; shortFirstPass?: boolean } = {}) {
   let polls = 0;
   let status = 'READY';
   const sequence = opts.fail ? ['READY', 'PENDING', 'FAILED'] : ['READY', 'PENDING', 'SUCCESS'];
@@ -47,7 +47,11 @@ function fakeWorld(opts: { fail?: boolean; stuck?: boolean; pageSize?: number; t
         { id: 'p2', amount: '2.0000000', status: st, stellar_transaction_id: tx(st!, 'b'), disbursement: { id: 'd1' }, receiver_wallet: { stellar_address: R2, receiver: { id: 'r2' } } },
       ];
       const start = (page - 1) * pageSize;
-      const data = all.slice(start, start + pageSize);
+      let data = all.slice(start, start + pageSize);
+      // a row that moved across the page boundary between the two requests
+      if (opts.duplicateAcrossPages && page === 2) data = [all[1]!, ...data];
+      // the SDP was still writing rows on the first pass: one of d1's rows is missing once
+      if (opts.shortFirstPass && pageRequests.filter((r) => r.page === 1).length === 1) data = data.filter((p) => p.id !== 'p2');
       const pages = Math.ceil(all.length / pageSize);
       const pagination: Record<string, unknown> = { pages, total: all.length };
       if (page < pages) pagination.next = `/payments?page=${page + 1}&page_limit=${pageLimit}`;
@@ -130,11 +134,23 @@ describe('runBatch', () => {
     expect(r.started).toBe(false);
   });
 
-  it('paymentsOf reads every page at page_limit 100 and keeps only the disbursement\'s payments', async () => {
+  it('paymentsOf reads every page at page_limit 100 in created_at ascending order and keeps only the disbursement\'s payments', async () => {
     const w = fakeWorld();
     const ps = await paymentsOf(w.deps.client, 'd1');
     expect(ps.map((p) => p.id)).toEqual(['p1', 'p2']);
     expect(w.pageRequests).toEqual([{ page: 1, pageLimit: 100 }, { page: 2, pageLimit: 100 }]);
+    const paymentCalls = w.calls.filter((c) => c.url.includes('/payments'));
+    for (const c of paymentCalls) {
+      const u = new URL(c.url);
+      expect(u.searchParams.get('sort')).toBe('created_at');
+      expect(u.searchParams.get('direction')).toBe('asc');
+    }
+  });
+
+  it('paymentsOf de-duplicates a row that appears on two pages', async () => {
+    const w = fakeWorld({ duplicateAcrossPages: true });
+    const ps = await paymentsOf(w.deps.client, 'd1', undefined, 2);
+    expect(ps.map((p) => p.id)).toEqual(['p1', 'p2']);
   });
 
   it('paymentsOf refuses a set whose count differs from the disbursement\'s rows', async () => {
@@ -143,9 +159,22 @@ describe('runBatch', () => {
     expect(await paymentsOf(w.deps.client, 'd1', undefined, 2)).toHaveLength(2);
   });
 
-  it('runBatch fails rather than judging a batch complete on a partial set', async () => {
+  it('runBatch never judges a batch complete on a partial set: it polls again, and ends timed out with the incomplete note if the set never adds up', async () => {
     const w = fakeWorld({ totalPayments: 3 });
-    await expect(runBatch(w.deps, { disbursementId: 'd1', asset: USDC, pollMs: 1000 })).rejects.toThrow(/incomplete/);
+    const r = await runBatch(w.deps, { disbursementId: 'd1', asset: USDC, pollMs: 1000, timeoutMs: 5000 });
+    expect(r.timedOut).toBe(true);
+    expect(r.incomplete).toEqual({ listed: 2, expected: 3 });
+    expect(r.payments).toEqual([]);
+    expect(formatBatchReport(r)).toContain('payment set incomplete: 2 of 3 listed');
+  });
+
+  it('a transient short page is "poll again", not fatal: the run completes once the set adds up', async () => {
+    const w = fakeWorld({ shortFirstPass: true });
+    const r = await runBatch(w.deps, { disbursementId: 'd1', asset: USDC, pollMs: 1000 });
+    expect(r.timedOut).toBe(false);
+    expect(r.incomplete).toBeUndefined();
+    expect(r.finalStatus).toBe('COMPLETED');
+    expect(r.payments).toHaveLength(2);
   });
 
   it('masks accounts in the report and never carries a full address', async () => {

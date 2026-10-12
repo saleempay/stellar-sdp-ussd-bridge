@@ -474,8 +474,22 @@ export class SdpTenantClient {
    * (validators/query_validator.go:23-24); there is no disbursement filter
    * (internal/data/payments.go:69), so callers filter and must page.
    */
-  async listPayments(walletId?: string, page?: { page: number; pageLimit: number }): Promise<Paginated<Payment>> {
-    const qs = page ? `?page=${page.page}&page_limit=${page.pageLimit}` : '';
+  /**
+   * GET /payments. `page` and `page_limit` (query_validator.go:29-30 at
+   * 7.0.0, page_limit at most 100, :93-94); `sort` is `created_at` or
+   * `updated_at` (internal/data/payments.go:70, AllowedPaymentSorts; the
+   * default is updated_at descending, :67) and `direction` is `asc` or
+   * `desc` (query_validator.go:40-44).
+   */
+  async listPayments(walletId?: string, page?: { page: number; pageLimit: number; sort?: 'created_at' | 'updated_at'; direction?: 'asc' | 'desc' }): Promise<Paginated<Payment>> {
+    const q = new URLSearchParams();
+    if (page) {
+      q.set('page', String(page.page));
+      q.set('page_limit', String(page.pageLimit));
+      if (page.sort) q.set('sort', page.sort);
+      if (page.direction) q.set('direction', page.direction);
+    }
+    const qs = page ? `?${q.toString()}` : '';
     const res = await send(this.fetchImpl, this.base, {
       method: 'GET',
       path: `/payments${qs}`,

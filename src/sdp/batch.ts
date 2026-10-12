@@ -77,6 +77,8 @@ export interface BatchResult {
   started: boolean;
   finalStatus: string;
   timedOut: boolean;
+  /** Set when the run ended while the listed payments still did not add up to the disbursement's rows. */
+  incomplete?: { listed: number; expected: number };
   timeline: TimelineEntry[];
   payments: ConfirmedPayment[];
 }
@@ -120,23 +122,26 @@ export class PaymentsIncompleteError extends Error {
 /**
  * Payments of one disbursement: every page of the tenant's list at the
  * maximum page size, filtered client-side, until no next page remains.
- * When the expected count is given (the disbursement's total_payments),
- * the set is refused unless the count matches, so a partial set can never
- * be judged complete.
+ * The pages are read in `created_at` ascending order, which does not move
+ * while a batch runs (the SDP's default, `updated_at` descending, re-sorts
+ * on every status change, so a row could cross the page boundary between
+ * two requests). Rows are de-duplicated by id. When the expected count is
+ * given (the disbursement's total_payments), the set is refused unless the
+ * count matches, so a partial set can never be judged complete.
  */
 export async function paymentsOf(client: SdpTenantClient, disbursementId: string, walletId?: string, expectedCount?: number): Promise<Payment[]> {
-  const found: Payment[] = [];
+  const found = new Map<string, Payment>();
   for (let page = 1; ; page += 1) {
-    const res = await client.listPayments(walletId, { page, pageLimit: PAYMENTS_PAGE_LIMIT });
+    const res = await client.listPayments(walletId, { page, pageLimit: PAYMENTS_PAGE_LIMIT, sort: 'created_at', direction: 'asc' });
     for (const p of res.data) {
-      if ((p.disbursement as { id?: string } | undefined)?.id === disbursementId) found.push(p);
+      if ((p.disbursement as { id?: string } | undefined)?.id === disbursementId && !found.has(p.id)) found.set(p.id, p);
     }
     if (!res.pagination?.next || res.data.length === 0) break;
   }
-  if (expectedCount !== undefined && found.length !== expectedCount) {
-    throw new PaymentsIncompleteError(disbursementId, found.length, expectedCount);
+  if (expectedCount !== undefined && found.size !== expectedCount) {
+    throw new PaymentsIncompleteError(disbursementId, found.size, expectedCount);
   }
-  return found;
+  return [...found.values()];
 }
 
 export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<BatchResult> {
@@ -154,9 +159,28 @@ export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<Bat
   let timedOut = false;
   /** Full recipient address per payment id, kept out of every serialised structure. */
   const recipients = new Map<string, string>();
+  /** Set when the last poll listed a payment set that did not add up; cleared by a complete read. */
+  let incomplete: PaymentsIncompleteError | undefined;
   for (;;) {
     const d = await deps.client.getDisbursement(opts.disbursementId, opts.walletId);
-    const raw = await paymentsOf(deps.client, opts.disbursementId, opts.walletId, d.total_payments);
+    let raw: Payment[];
+    try {
+      raw = await paymentsOf(deps.client, opts.disbursementId, opts.walletId, d.total_payments);
+      incomplete = undefined;
+    } catch (err) {
+      // A set that does not add up is "poll again", not fatal: a page may
+      // have been read while the SDP was writing. It becomes the outcome
+      // only when the deadline passes with the set still incomplete.
+      if (!(err instanceof PaymentsIncompleteError)) throw err;
+      incomplete = err;
+      if (deps.now() >= deadline) {
+        timedOut = true;
+        finalStatus = d.status;
+        break;
+      }
+      await deps.sleep(pollMs);
+      continue;
+    }
     for (const p of raw) {
       const to = recipientOf(p);
       if (to) recipients.set(p.id, to);
@@ -221,7 +245,9 @@ export async function runBatch(deps: BatchDeps, opts: BatchOptions): Promise<Bat
     }
     confirmed.push(c);
   }
-  return { disbursementId: opts.disbursementId, started, finalStatus, timedOut, timeline, payments: confirmed };
+  const result: BatchResult = { disbursementId: opts.disbursementId, started, finalStatus, timedOut, timeline, payments: confirmed };
+  if (incomplete) result.incomplete = { listed: incomplete.listed, expected: incomplete.expected };
+  return result;
 }
 
 /** Sum of a disbursement's payment amounts as a string with 7 decimals (string arithmetic). */
@@ -238,7 +264,7 @@ export function totalAmount(payments: Array<{ amount: string }>): string {
 }
 
 export function formatBatchReport(r: BatchResult): string {
-  const lines = [`disbursement ${r.disbursementId}: ${r.finalStatus}${r.timedOut ? ' (timed out waiting)' : ''}; ${r.started ? 'started by this run' : 'already started'}`];
+  const lines = [`disbursement ${r.disbursementId}: ${r.finalStatus}${r.timedOut ? ' (timed out waiting)' : ''}${r.incomplete ? ` (payment set incomplete: ${r.incomplete.listed} of ${r.incomplete.expected} listed)` : ''}; ${r.started ? 'started by this run' : 'already started'}`];
   for (const p of r.payments) {
     lines.push(
       [
