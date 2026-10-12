@@ -30,8 +30,12 @@
  * the service code can dial. So creation answers E3 (CreationCappedError)
  * when the sponsor's spendable XLM is below a configured minimum, or when
  * the configured number of creations in the last hour has been reached.
- * Adopting an account that already landed is not a creation and is never
- * capped.
+ * The hourly slot is reserved before the submission and released only on a
+ * definitive failure, so dials from different numbers that arrive together
+ * cannot all pass the cap, and a creation that ended ambiguous keeps its
+ * slot (it may have landed). The count lives in this process and starts
+ * at zero on restart. Adopting an account that already landed is not a
+ * creation and is never capped.
  */
 import {
   createSponsoredAccount,
@@ -115,15 +119,30 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
   const log = deps.log ?? (() => undefined);
   const now = deps.now ?? (() => Date.now());
   const caps = deps.caps ?? DEFAULT_CREATION_CAPS;
-  /** Completion times of creations by this process, newest last. */
+  /** Reservation times of creations by this process, newest last: a slot is taken before the submission. */
   const creations: number[] = [];
 
-  const assertUnderCaps = async (): Promise<void> => {
+  /** Checks both caps and, when they pass, reserves this creation's hourly slot. Returns the release function for a definitive failure. */
+  const reserveUnderCaps = async (): Promise<() => void> => {
     const since = now() - HOUR_MS;
     while (creations.length && creations[0]! < since) creations.shift();
     if (creations.length >= caps.maxPerHour) {
-      throw new CreationCappedError('rate', `${creations.length} accounts were created in the last hour; the cap is ${caps.maxPerHour}`);
+      throw new CreationCappedError('rate', `${creations.length} accounts were created or reserved in the last hour; the cap is ${caps.maxPerHour}`);
     }
+    // reserve before any await, so concurrent callers see this slot taken
+    const slot = now();
+    creations.push(slot);
+    const release = () => { const i = creations.indexOf(slot); if (i >= 0) creations.splice(i, 1); };
+    try {
+      await assertSponsorFloor();
+    } catch (err) {
+      release();
+      throw err;
+    }
+    return release;
+  };
+
+  const assertSponsorFloor = async (): Promise<void> => {
     const sponsor = await deps.horizon.loadAccount(deps.sponsorPublicKey);
     const spendable = typeof (sponsor as HorizonAccountRecord).subentryCount === 'number'
       ? spendableXlm(sponsor as HorizonAccountRecord)
@@ -161,9 +180,15 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
       await deps.pendingStore?.delete(msisdn);
     }
 
-    await assertUnderCaps();
-    const newAccountId = await deps.signer.createAccountKey();
-    await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date(now()).toISOString() });
+    const release = await reserveUnderCaps();
+    let newAccountId: string;
+    try {
+      newAccountId = await deps.signer.createAccountKey();
+      await deps.pendingStore?.put(msisdn, { accountId: newAccountId, at: new Date(now()).toISOString() });
+    } catch (err) {
+      release();
+      throw err;
+    }
     try {
       const result = await createSponsoredAccount({
         horizon: deps.horizon,
@@ -176,7 +201,6 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
       });
       await deps.store.put(msisdn, newAccountId);
       await deps.pendingStore?.delete(msisdn);
-      creations.push(now());
       return { accountId: newAccountId, creationTxHash: result.hash, created: true };
     } catch (err) {
       if (isNonDefinitiveSubmission(err)) {
@@ -185,7 +209,6 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
         if (p === 'exists') {
           await deps.store.put(msisdn, newAccountId);
           await deps.pendingStore?.delete(msisdn);
-          creations.push(now());
           log('creation event=landedAfterAmbiguousSubmission');
           return { accountId: newAccountId, created: true };
         }
@@ -198,6 +221,8 @@ export function createOnDial(deps: CreateOnDialDeps): (msisdn: string) => Promis
         log('creation event=ambiguousNotYetLanded');
         throw new CreationPendingError(newAccountId, expiresAt);
       }
+      // a definitive failure: nothing was created, the slot is free again
+      release();
       await deps.pendingStore?.delete(msisdn);
       throw err;
     }

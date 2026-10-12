@@ -3,7 +3,7 @@ import { InMemoryAccountStore } from 'stellar-ussd-sep10-adapter';
 import { InMemoryPendingStore } from '../../src/provision/pending.js';
 import { createOnDial, withInFlightGuard } from '../../src/ussd/createOnDial.js';
 import { CreationCappedError, CreationPendingError } from '../../src/ussd/errors.js';
-import { FakeHorizon, FakeSigner, NETWORK, SPONSOR, USDC, timeout } from './provisionFakes.js';
+import { FakeHorizon, FakeSigner, NETWORK, SPONSOR, USDC, rejection, timeout } from './provisionFakes.js';
 
 const MSISDN = '+999738035311';
 
@@ -163,6 +163,28 @@ describe('createOnDial caps', () => {
     expect(f.horizon.submissions).toHaveLength(2);
     f.advance(60 * 60 * 1000 + 1);
     expect((await f.create('+999738035333')).created).toBe(true);
+  });
+
+  it('the hourly slot is reserved before the submission: simultaneous first dials from different numbers cannot all pass the cap', async () => {
+    const f = setup({ caps: { minSponsorXlm: 1, maxPerHour: 2 } });
+    const numbers = ['+999738035311', '+999738035322', '+999738035333', '+999738035344', '+999738035355'];
+    const results = await Promise.all(numbers.map((n) => f.create(n).then(() => 'created', (e: unknown) => (e instanceof CreationCappedError ? e.reason : 'error'))));
+    expect(results.filter((r) => r === 'created')).toHaveLength(2);
+    expect(results.filter((r) => r === 'rate')).toHaveLength(3);
+    expect(f.horizon.submissions).toHaveLength(2);
+  });
+
+  it('a definitive failure releases its slot; an ambiguous one keeps it', async () => {
+    const f = setup({ caps: { minSponsorXlm: 1, maxPerHour: 1 } });
+    f.horizon.nextErrors = [rejection('tx_insufficient_balance', [])];
+    await expect(f.create('+999738035311')).rejects.toThrow(/tx_insufficient_balance/);
+    // the rejected creation freed its slot: the next number may create
+    f.horizon.nextErrors = [timeout('submitTransaction')];
+    await expect(f.create('+999738035322')).rejects.toBeInstanceOf(CreationPendingError);
+    // the ambiguous creation keeps its slot (it may have landed): a third number is capped
+    const err = await f.create('+999738035333').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CreationCappedError);
+    expect((err as CreationCappedError).reason).toBe('rate');
   });
 
   it('a mapped number is never capped, and neither is adopting an account that already landed', async () => {

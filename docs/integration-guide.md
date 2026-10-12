@@ -222,7 +222,10 @@ unavailable. Please try again later." (E4) and creates nothing; once the
 account appears it is adopted; once the bound has passed with the account
 still absent, the next dial creates afresh. `npm run provision` follows
 the same rule and reports such a row as `uncertain` until the bound has
-passed. This is the standard Stellar handling of an unanswered submission:
+passed. The hourly cap (`USSD_CREATE_MAX_PER_HOUR`) reserves its slot
+before the submission, so dials from different numbers that arrive
+together cannot all pass it; the count lives in the service process and
+starts at zero when the process restarts. This is the standard Stellar handling of an unanswered submission:
 with a time bound the transaction either makes it into a ledger exactly
 once or times out (developers.stellar.org, Horizon API reference, "Error
 Handling" and the "Timeout" status code, read 12 October 2026).
