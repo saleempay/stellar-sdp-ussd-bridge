@@ -21,6 +21,7 @@
 import { SdpAdminClient, SdpHttpError, SdpTenantClient, type Tenant } from './client.js';
 import {
   DISTRIBUTION_ACCOUNT_DB_VAULT,
+  TENANT_STATUSES_USABLE,
   TESTNET_USDC_ISSUER,
   USDC_CODE,
   USER_MANAGED_WALLET_NAME,
@@ -145,9 +146,13 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   });
 
   // 3: the tenant exists, with its own distribution account in the DB vault.
+  // An existing tenant passes only in a usable status and with a
+  // distribution account address; a deactivated tenant or one without an
+  // account would report ready and then fail at the first payment.
   const tenant = await run('tenant exists', async () => {
     const existing = await deps.admin.getTenant(spec.name);
     if (existing) {
+      assertTenantUsable(existing);
       results.push({
         step: 'tenant exists',
         outcome: 'already',
@@ -165,6 +170,7 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
       base_url: cfg.apiUrl,
       sdp_ui_base_url: cfg.uiUrlFor(spec.name),
     });
+    assertTenantUsable(created);
     results.push({
       step: 'tenant exists',
       outcome: 'done',
@@ -213,11 +219,18 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   });
 
   // 7: the user managed wallet (the record wallet-address disbursements
-  // reference) exists and is enabled.
+  // reference) exists and is enabled. The SDP routes a wallet-address
+  // disbursement through the first enabled user managed wallet it finds
+  // (disbursement_handler.go:146-158), so the bridge enables the one seeded
+  // under the testnet name and fails when it is absent rather than
+  // enabling whichever wallet comes first.
   await run('user managed wallet', async () => {
     const wallets = await client.listWallets({ user_managed: true });
-    const wallet = wallets.find((w) => w.name === USER_MANAGED_WALLET_NAME) ?? wallets[0];
-    if (!wallet) throw new Error('no user managed wallet is seeded for this tenant');
+    const wallet = wallets.find((w) => w.name === USER_MANAGED_WALLET_NAME);
+    if (!wallet) {
+      const seen = wallets.map((w) => `"${w.name}"`).join(', ') || '(none)';
+      throw new Error(`no user managed wallet named "${USER_MANAGED_WALLET_NAME}" is seeded for this tenant; user managed wallets present: ${seen}`);
+    }
     if (wallet.enabled) {
       results.push({ step: 'user managed wallet', outcome: 'already', detail: `"${wallet.name}" id ${wallet.id} is enabled` });
       return;
@@ -239,6 +252,25 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   });
 
   return results;
+}
+
+/**
+ * The tenant can be used for the wallet-address route: status in
+ * TENANT_STATUSES_USABLE and a distribution account address present.
+ * Throws with the status and the masked address otherwise.
+ */
+export function assertTenantUsable(tenant: Tenant): void {
+  const usable = (TENANT_STATUSES_USABLE as readonly string[]).includes(tenant.status);
+  if (!usable) {
+    throw new Error(
+      `tenant ${tenant.name} id ${tenant.id} has status ${tenant.status}; usable statuses at SDP 7.0.0 are ${TENANT_STATUSES_USABLE.join(', ')} (pkg/schema/tenant.go:26-31)`,
+    );
+  }
+  if (!tenant.distribution_account_address) {
+    throw new Error(
+      `tenant ${tenant.name} id ${tenant.id} has no distribution account address (status ${tenant.status}, account type ${tenant.distribution_account_type}); nothing can be paid from it`,
+    );
+  }
 }
 
 /** Render a step report as fixed-width text for the terminal and EVIDENCE.md. */

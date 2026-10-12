@@ -1,0 +1,134 @@
+/** Offline fakes for the provisioning pipeline. */
+import { Keypair } from '@stellar/stellar-sdk';
+import { InMemoryAccountStore, InMemoryPinStore, type HorizonLike, type Signer } from 'stellar-ussd-sep10-adapter';
+import type { HorizonAccountRecord } from '../../src/provision/horizon.js';
+import { HorizonResponseError, toAccountRecord } from '../../src/provision/horizon.js';
+import { HorizonTimeoutError } from '../../src/provision/errors.js';
+import { InMemoryPendingStore } from '../../src/provision/pending.js';
+
+export const USDC = { code: 'USDC', issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' };
+/** Real StrKey addresses: the SDK validates every address it builds an operation with. */
+export const SPONSOR = Keypair.random().publicKey();
+export const EXISTING = Keypair.random().publicKey();
+export const GONE = Keypair.random().publicKey();
+export const NETWORK = 'Test SDF Network ; September 2015';
+
+/** A Horizon rejection shaped like the SDK's (result codes under response.data.extras). */
+export function rejection(transaction: string, operations: string[]): unknown {
+  const e = new Error(`Horizon submitTransaction returned HTTP 400`) as Error & { response: unknown; status: number };
+  e.status = 400;
+  e.response = { status: 400, data: { extras: { result_codes: { transaction, operations } } } };
+  return e;
+}
+
+export class FakeHorizon implements HorizonLike {
+  accounts = new Map<string, { xlm: string; trustlines: Array<{ code: string; issuer: string }>; subentries: number; sponsoring: number; sponsored: number }>();
+  submissions: string[] = [];
+  /** Queue of rejections: each submission pops one; `undefined` means success. */
+  nextErrors: unknown[] = [];
+  /** When set, every call throws it. */
+  failAll: unknown;
+  /**
+   * The ambiguous case: before the next queued error is thrown, the account
+   * this returns is created on the fake ledger, as a transaction that
+   * landed while the client gave up waiting.
+   */
+  landOnNextError?: () => string | undefined;
+  /** loadAccount throws the mapped error for these accounts (Horizon unreadable for them). */
+  failLoadFor = new Map<string, unknown>();
+  /**
+   * The late landing: the account named by `accountId()` is still absent
+   * for the next `afterProbes` loadAccount calls that ask for it, then it
+   * appears on the fake ledger, as a transaction that landed inside its
+   * time bound after the client had given up and already looked once.
+   */
+  landLater?: { accountId: () => string | undefined; afterProbes: number };
+  private seq = 1;
+
+  addAccount(id: string, opts: Partial<{ xlm: string; trustlines: Array<{ code: string; issuer: string }>; subentries: number; sponsoring: number; sponsored: number }> = {}) {
+    this.accounts.set(id, { xlm: opts.xlm ?? '100.0000000', trustlines: opts.trustlines ?? [], subentries: opts.subentries ?? 0, sponsoring: opts.sponsoring ?? 0, sponsored: opts.sponsored ?? 0 });
+  }
+
+  async loadAccount(accountId: string): Promise<HorizonAccountRecord> {
+    if (this.failAll) throw this.failAll;
+    const forced = this.failLoadFor.get(accountId);
+    if (forced) throw forced;
+    if (this.landLater && this.landLater.accountId() === accountId) {
+      if (this.landLater.afterProbes > 0) {
+        this.landLater.afterProbes -= 1;
+      } else {
+        this.addAccount(accountId, { xlm: '0.0000000', trustlines: [USDC], sponsored: 3 });
+        this.landLater = undefined;
+      }
+    }
+    const a = this.accounts.get(accountId);
+    if (!a) {
+      const e = new Error('not found') as Error & { status: number };
+      e.status = 404;
+      throw e;
+    }
+    return toAccountRecord({
+      id: accountId,
+      sequence: String(this.seq++),
+      subentry_count: a.subentries,
+      num_sponsoring: a.sponsoring,
+      num_sponsored: a.sponsored,
+      balances: [
+        ...a.trustlines.map((t) => ({ asset_type: 'credit_alphanum4', asset_code: t.code, asset_issuer: t.issuer, balance: '0.0000000' })),
+        { asset_type: 'native', balance: a.xlm },
+      ],
+    });
+  }
+
+  async submitTransaction(tx: { toXDR(): string }): Promise<{ hash: string; ledger?: number }> {
+    if (this.failAll) throw this.failAll;
+    const xdr = tx.toXDR();
+    const err = this.nextErrors.shift();
+    if (err) {
+      const landed = this.landOnNextError?.();
+      this.landOnNextError = undefined;
+      if (landed) this.addAccount(landed, { xlm: '0.0000000', trustlines: [USDC], sponsored: 3 });
+      throw err;
+    }
+    this.submissions.push(xdr);
+    // apply the effect: find created accounts and trustlines by decoding
+    // would need the SDK; the tests instead apply effects through `apply`
+    return { hash: `hash-${this.submissions.length.toString().padStart(4, '0')}`, ledger: 1000 + this.submissions.length };
+  }
+}
+
+/** A signer that hands out predictable keys and signs nothing for real. */
+export class FakeSigner implements Signer {
+  keys = new Set<string>([SPONSOR]);
+  /** The key most recently produced by createAccountKey. */
+  lastCreated: string | undefined;
+  onCreate?: (accountId: string) => void;
+  private n = 0;
+  async createAccountKey(): Promise<string> {
+    this.n += 1;
+    const id = Keypair.random().publicKey();
+    this.keys.add(id);
+    this.lastCreated = id;
+    this.onCreate?.(id);
+    return id;
+  }
+  async canSignFor(accountId: string): Promise<boolean> {
+    return this.keys.has(accountId);
+  }
+  async signTransaction(xdr: string): Promise<string> {
+    return xdr;
+  }
+}
+
+export function timeout(op = 'submitTransaction'): HorizonTimeoutError {
+  return new HorizonTimeoutError(op, 15_000);
+}
+
+/** A Horizon 5xx on submission, as the bridge's client throws it. */
+export function serverError(status = 503): HorizonResponseError {
+  return new HorizonResponseError('submitTransaction', status, { status });
+}
+
+export function stores() {
+  return { accountStore: new InMemoryAccountStore(), pinStore: new InMemoryPinStore(), pendingStore: new InMemoryPendingStore() };
+}

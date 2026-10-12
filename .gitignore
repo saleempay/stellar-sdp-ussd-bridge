@@ -22,3 +22,6 @@ docs/evidence/*.local.*
 
 # local run artefacts
 test-output/
+
+# provisioning stores: phone to account mapping and PIN hashes (personal data)
+data/

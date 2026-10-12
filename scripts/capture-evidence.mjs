@@ -20,6 +20,10 @@ import { dashboardUrlFor, loadEnvFile, sdpConfigFromEnv } from '../dist/index.js
 const require = createRequire(`${process.cwd()}/`);
 const { chromium } = require('playwright');
 
+const args = process.argv.slice(2);
+const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+/** --disbursement <id>: capture only that disbursement's page (Deliverable 4). */
+const disbursementId = opt('--disbursement');
 const cfg = sdpConfigFromEnv(loadEnvFile('sdp/.env'));
 const tenant = cfg.tenants[0];
 const base = dashboardUrlFor(cfg.uiOrigin, tenant.name);
@@ -38,12 +42,14 @@ try {
   await page.waitForURL((u) => !u.pathname.startsWith('/login') && u.pathname !== '/', { timeout: 30_000 });
   await page.waitForLoadState('networkidle');
 
-  const shots = [
-    ['/settings', 'd1-settings-invitations-off.png'],
-    ['/wallet-providers', 'd1-wallet-providers.png'],
-    ['/distribution-account', 'd1-distribution-account.png'],
-    ['/disbursements/new', 'd1-new-disbursement-form.png'],
-  ];
+  const shots = disbursementId
+    ? [[`/disbursements/${disbursementId}`, 'd4-disbursement-completed.png'], ['/payments', 'd4-payments.png']]
+    : [
+        ['/settings', 'd1-settings-invitations-off.png'],
+        ['/wallet-providers', 'd1-wallet-providers.png'],
+        ['/distribution-account', 'd1-distribution-account.png'],
+        ['/disbursements/new', 'd1-new-disbursement-form.png'],
+      ];
   for (const [path, file] of shots) {
     await page.goto(`${base}${path}`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(1500);
@@ -67,6 +73,15 @@ try {
       await page.waitForTimeout(1000);
       await choose((o) => /USDC/i.test(o));
       await page.waitForTimeout(800);
+    }
+    if (file.startsWith('d4-')) {
+      // the dashboard scrolls inside a container: capture the viewport, then the lower part
+      await page.screenshot({ path: `${outDir}/${file}` });
+      await page.mouse.wheel(0, 900);
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: `${outDir}/${file.replace('.png', '-2.png')}` });
+      console.log(`captured ${file} and its second page (${path})`);
+      continue;
     }
     await page.screenshot({ path: `${outDir}/${file}`, fullPage: true });
     console.log(`captured ${file} (${path})`);
