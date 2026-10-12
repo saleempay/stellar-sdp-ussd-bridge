@@ -1,8 +1,9 @@
-# Period report, draft: Stellar Instaward Application 2
+# Period report: Stellar Instaward Application 2 (progress, 12 October 2026)
 
-Prepared 7 October 2026 and refreshed 10 and 11 October 2026 for the
-Chapter Lead, by 5 Lanes Limited (Saleem). Plain English; every claim links to a
-file in this repository, to GitHub, or to the Stellar test network.
+Prepared for the Chapter Lead by 5 Lanes Limited (Saleem) as a progress
+report ahead of the merges. Everything in it is true as of 12 October
+2026. Plain English; every claim links to a file in this repository, to
+GitHub, or to the Stellar test network.
 
 ## Period and start
 
@@ -24,48 +25,38 @@ disbursement file, and lets each recipient see what arrived over USSD.
 Code, scripts and guides are public under MIT at
 [github.com/saleempay/stellar-sdp-ussd-bridge](https://github.com/saleempay/stellar-sdp-ussd-bridge),
 with the evidence record in
-[`EVIDENCE.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/d4-batch-evidence/EVIDENCE.md)
+[`EVIDENCE.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/d5-review-fixes/EVIDENCE.md)
 and the checklist in
-[`docs/instaward-evidence-package.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/d4-batch-evidence/docs/instaward-evidence-package.md).
+[`docs/instaward-evidence-package.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/d5-review-fixes/docs/instaward-evidence-package.md).
 
-| Deliverable | State on 10 October | Evidence |
+| Deliverable | State on 12 October | Evidence |
 |---|---|---|
-| 1. SDP 7.0.0 testnet tenant for basic-phone recipients | Built; under review ([pull request #1](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/1)) | one-command setup on the published 7.0.0 images; dashboard screenshots of the USDC asset, invitations off and the wallet-address contact type; the scoping and status retest |
-| 2. Recipient provisioning bridge | Built; under review ([pull request #2](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/2)) | five accounts created with trustlines in one sponsored transaction each, hashes on stellar.expert; the disbursement file; a second run that changes nothing; the file accepted by the SDP |
-| 3. USSD receive and balance view | Built; under review ([pull request #3](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/3)) | the walkthrough screens word for word; three live session sets on the sandbox, one passed by the automated harness; a 27 second video of a first-use session with the PIN blurred |
-| 4. End-to-end batch and evidence package | Batch built and confirmed; the recorded USSD sessions after the batch are outstanding; under review ([pull request #4](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/4)) | 20 USDC from Circle's testnet faucet; the batch of five payments completed in 46 seconds, each confirmed on Horizon; the integration guide verified from a clean clone; the evidence package |
+| 1. SDP 7.0.0 testnet tenant for basic-phone recipients | Built; reviewed; fixes awaiting approval ([pull request #1](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/1)) | one-command setup on the published 7.0.0 images; dashboard screenshots of the USDC asset, invitations off and the wallet-address contact type; the scoping and status retest |
+| 2. Recipient provisioning bridge | Built; reviewed; fixes awaiting approval ([pull request #2](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/2)) | five accounts created with trustlines in one sponsored transaction each, hashes on stellar.expert; the disbursement file; a second run that changes nothing; the file accepted by the SDP |
+| 3. USSD receive and balance view | Built; reviewed; fixes awaiting approval ([pull request #3](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/3)) | the walkthrough screens word for word; live session sets on the sandbox, one passed by the automated harness; a 27 second video of a first-use session with the PIN blurred |
+| 4. End-to-end batch and evidence package | Built; reviewed; fixes awaiting approval ([pull request #4](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/4)) | 20 USDC from Circle's testnet faucet; the batch of five payments completed in 46 seconds, each confirmed on Horizon; the five recipients' USSD sessions after the batch; the integration guide verified from a clean clone; the evidence package |
 
 ## Review and merge state
 
-- **Merged into the bridge's main branch:** nothing yet. The four pull
-  requests are open, each built on the one before it (#1 on main, #2 on
-  #1, #3 on #2, #4 on #3), so they merge in order. Every one passes the
+- **Reviewed.** Ismael Mbouna (ismo90), the build lead, reviewed pull
+  requests 1 to 4 on 10 October: four reviews and 22 inline comments,
+  each checked against the SDP source at 7.0.0.
+- **Answered.** His findings are answered in
+  [pull request #5](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/5),
+  one commit per finding, each with a regression test, under the rulings
+  of 11 October. On 12 October he verified the fix round against the same
+  method and found every finding closed except one, which is to be fixed
+  before he approves: an account creation whose submission times out on
+  the client side may still land on the network within the transaction's
+  120 second time bound, so a re-run or re-dial inside that window could
+  create a second account. Three minor points can follow. Pull request #5
+  is awaiting his approval after that fix.
+- **Nothing is merged yet.** The four pull requests are open, each built
+  on the one before it (#1 on main, #2 on #1, #3 on #2, #4 on #3), with
+  #5 into #4, so they merge in order once approved. Every one passes the
   automated checks (install, typecheck, offline tests, secret scan).
-- **Under review:** all four, review requested from Ramy Soliman
-  (rasoliman). The build lead, Ismael (ismo90), accepted the repository
-  invitation on 10 October and reviewed all four pull requests the same
-  day: four reviews and 22 inline comments, each checked against the SDP
-  source at 7.0.0. His open findings, by pull request: #1, five items to
-  fix before the later deliverables build on it (a forced re-generation
-  of the SDP secrets over an existing database volume, ports published on
-  every interface, a tenant accepted whatever its status, distribution
-  accounts not being an isolation boundary, the secret scan's scope) and
-  several smaller ones; #2, the sponsor and PIN surface not approved yet
-  (an ambiguous submission losing the account, recipient keys discarded
-  at exit, a partial output file that looks complete); #3, the PIN and
-  callback surface not approved yet (the submodule pin, a second account
-  creatable for one number on dial, creation on dial defaulting to on
-  with no cap); #4, the payments list read from one page and the Horizon
-  confirmation not tied to the payment. The review-fixes pull request
-  (branch `d5-review-fixes` into `d4-batch-evidence`) answers every
-  finding with one commit per finding under the rulings of 11 October:
-  provisioned accounts are receive-only with the reference signer and the
-  documents say so; creation on dial is off by default and capped;
-  synthetic numbers move to the non-assignable `+999` range; the tenant
-  is recorded as the isolation boundary; the remaining fixes are made as
-  he described them. Each of his 22 threads carries a reply naming the
-  commit or the ruling.
-- **The adapter (Application 1):** the one change the bridge needed on
+  Merge is planned by 16 October.
+- **The adapter (Application 1).** The one change the bridge needed on
   the adapter, [pull request #15](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/15),
   was approved by Ismael and merged on 7 October. It was merged as a
   merge commit with GitHub's default message rather than the agreed
@@ -78,24 +69,23 @@ and the checklist in
 
 ## Evidence rows
 
-Of the 23 rows in the evidence package, 22 are complete and verifiable
-today. Every transaction hash, ledger number, operation and amount in the
-package was re-checked against Horizon and stellar.expert on 10 October
-2026 and nothing had moved. The one open row is 4.3, each recipient
-seeing the payment over USSD, which needs the recorded sandbox sessions
-described below.
+Every one of the 23 rows in the evidence package is complete and
+verifiable. Row 4.3, each recipient seeing the payment over USSD, was
+captured on 11 October: the five recipients were dialled in the sandbox
+simulator and recorded as a masked transcript, the first live run of the
+service on the pinned adapter (`EVIDENCE.md`, "2026-10-11: Deliverable 4,
+part 3, third attempt"). The dials that failed on 7 and 10 October failed
+because the gateway dashboard held the hostname of an earlier quick
+tunnel, which changes on every start; there was no gateway fault
+(`EVIDENCE.md`, "2026-10-11: correction"). Every transaction hash, ledger
+number, operation and amount in the package was re-checked against
+Horizon and stellar.expert on 12 October 2026 and nothing had moved.
 
-**Clips.** One clip exists: the 27 second recording of a first-use session
-on the sandbox simulator
+**Video.** One clip exists: the 27 second recording of a first-use
+session on the sandbox simulator
 (`docs/evidence/d3-ussd-provisioned-path-r5-2026-10-07.mp4`, 7 October).
-The five clips showing each recipient's paid balance after the batch have
-not been recorded on video; the dials after 13:27 UTC on 7 October and
-the dials on 10 October failed because the gateway dashboard held the
-hostname of an earlier tunnel (finding 4). On 11 October the five
-sessions were dialled in the sandbox simulator and captured as a masked
-transcript (`EVIDENCE.md`, "2026-10-11: Deliverable 4, part 3, third
-attempt"), which closes evidence row 4.3; the video clips remain to be
-recorded.
+The demo video cut of the five sessions after the batch remains to be
+made from the captured sessions.
 
 ## The batch, in one paragraph
 
@@ -115,8 +105,9 @@ balance on the ledger now equals the amount in the file.
    balance. In the retest, a payment to a receiver created under one
    account, sent from a second account, was refused by the balance check,
    not by scoping. Across tenants the receiver was not found. This is not
-   a defect for the bridge's route (one tenant, one paying account), and
-   it is recorded so the boundary is known (`EVIDENCE.md`, Deliverable 1).
+   a defect for the bridge's route (one tenant, one paying account); the
+   integration guide records that the isolation boundary is the tenant
+   and never the distribution account (`EVIDENCE.md`, Deliverable 1).
 2. **USSD walkthrough deviation.** The menu follows the walkthrough
    attached to the Africa's Talking service order word for word, with one
    deviation: a recipient provisioned by the bridge (account exists, no
@@ -125,7 +116,7 @@ balance on the ledger now equals the amount in the file.
    Eleven small additions (error and edge screens the walkthrough does not
    cover) are listed with their exact text in
    `docs/walkthrough-deviations.md`. The written notice to Africa's
-   Talking that this requires before production is drafted in
+   Talking that this requires before any production use is drafted in
    `docs/africas-talking-walkthrough-notice-v1.md`, for Ramy Soliman to
    send.
 3. **Adapter pull request.** The bridge reuses Application 1's adapter by
@@ -136,33 +127,17 @@ balance on the ledger now equals the amount in the file.
    request approved and merged on 7 October (see "Review and merge
    state" for the merge message and the note in #17). The bridge pins the
    adapter to the merge commit.
-4. **Stale tunnel hostname in the gateway dashboard, 7 and 10 October.**
-   The Africa's Talking sandbox served the bridge from 12:40 to 13:26 UTC
-   on 7 October. Every later dial that day and both dials on 10 October
-   failed within a second. The dashboard's Session Details, read on 11
-   October, name the cause of each: 405 Method Not Allowed from the
-   callback (12:30 to 12:37), UnknownHostException for the hostname of a
-   tunnel started earlier (13:01 to 13:06, 13:23, and both channels on 10
-   October), 530 (13:14), and 502 Bad Gateway from a tunnel with no server
-   behind it (13:27 to 13:28 and 14:16). A quick tunnel gets a new
-   hostname on every start and the saved callback kept an old one; the
-   check before each dial compared the last four characters of the path
-   and never the host. There was no gateway fault. The capture script now
-   starts the tunnel itself, writes every tunnel start to the record,
-   prints the hostname in full, and prints "ready to dial" only after the
-   hostname resolves on two public resolvers and a live probe returns
-   screen 1 (`EVIDENCE.md`, 11 October correction). The recorded sessions
-   showing each recipient's paid balance are therefore outstanding.
 
 ## What remains
 
-- The demo video cut of the USSD sessions after the batch (the sessions
-  themselves were captured on 11 October, evidence row 4.3).
-- Review of the review-fixes pull request by both reviewers, then merge
-  of the bridge's pull requests in order #1, #2, #3, #4 with the fixes.
-- Merge of the adapter's note pull request #17.
-- Sending the written notice to Africa's Talking on the walkthrough
-  deviation and additions (drafted; Ramy Soliman's step).
+| Item | Date |
+|---|---|
+| Close the one open finding on pull request #5 (the creation time bound) with a regression test, then Ismael's approval | 14 October |
+| Merge the bridge's pull requests in order, #1, #2, #3, #4 with the fixes of #5 | by 16 October |
+| The demo video cut of the five USSD sessions after the batch, from the sessions captured on 11 October | by 16 October |
+| Merge of the adapter's note pull request #17 | by 16 October |
+| Send the written notice to Africa's Talking on the walkthrough deviation and additions (drafted; Ramy Soliman's step) | by 16 October |
+| Close of the statement-of-work window | 3 November |
 
-Six days remain to the planned completion date of 16 October and 24 to
+Four days remain to the planned completion date of 16 October and 22 to
 the end of the statement-of-work window on 3 November.
