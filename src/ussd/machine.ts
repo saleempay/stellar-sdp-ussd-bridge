@@ -45,6 +45,7 @@ import {
   type UssdSession,
 } from 'stellar-ussd-sep10-adapter';
 import { AccountNotOnChainError, CreationCappedError, CreationPendingError, NoUsdcTrustlineError } from './errors.js';
+import { AccountReadError, describeReadFailure, formatReadFailure } from './accountView.js';
 import { SCREENS, type AccountView } from './screens.js';
 
 export interface BridgeMachineDeps {
@@ -62,6 +63,8 @@ export interface BridgeMachineDeps {
    */
   createAccount?: (msisdn: string) => Promise<{ accountId: string; creationTxHash?: string }>;
   msisdn: MsisdnInferenceConfig;
+  /** Closing line of screens 7 and 8; the contracted text when absent (closingLine.ts). */
+  closingLine?: string;
   now?: () => number;
   /** Event sink: state names and event codes only, never user input. */
   log?: (line: string) => void;
@@ -124,7 +127,7 @@ async function transition(
 ): Promise<Screen> {
   switch (session.state) {
     case 'welcome': {
-      if (input === '2') return SCREENS.about();
+      if (input === '2') return SCREENS.about(deps.closingLine);
       if (input !== '1') return SCREENS.invalidChoice(SCREENS.mainMenu());
       session.accountId = await deps.accounts.get(session.msisdn);
       const pinExists = await hasPin({ store: deps.pins }, session.msisdn);
@@ -242,7 +245,7 @@ async function renderAccount(
   try {
     const view = await deps.loadView(accountId);
     log(`session=${session.sessionId} event=accountScreen path=${path} hasLastReceived=${view.lastReceived !== undefined}`);
-    return SCREENS.account(accountId, view, new Date(now));
+    return SCREENS.account(accountId, view, new Date(now), deps.closingLine);
   } catch (err) {
     if (err instanceof AccountNotOnChainError) {
       log(`session=${session.sessionId} event=accountNotOnChain`);
@@ -252,7 +255,9 @@ async function renderAccount(
       log(`session=${session.sessionId} event=noTrustline`);
       return SCREENS.endNoTrustline();
     }
-    log(`session=${session.sessionId} event=viewFailed code=${(err as { code?: string })?.code ?? (err as Error)?.name ?? 'unknown'}`);
+    // the underlying code (and status, and the cause's code) of the last attempt, never user data
+    const attempts = err instanceof AccountReadError ? err.attempts : 1;
+    log(`session=${session.sessionId} event=viewFailed attempts=${attempts} ${formatReadFailure(describeReadFailure(err instanceof AccountReadError ? err.cause : err))}`);
     return SCREENS.endServiceDown();
   }
 }

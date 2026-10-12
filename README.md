@@ -15,8 +15,10 @@ Released under MIT so any wallet provider or NGO can use it.
 
 ## Status
 
-Sprint in progress (October 2026). Testnet only. Nothing here moves real
-funds.
+Sprint in progress (October 2026). Testnet is the only network this
+repository configures; nothing here moves real funds. Network values are
+read from the environment and asserted at boot (`docs/sdp-setup.md`,
+section 9).
 
 Deliverable 1 (SDP 7.0.0 testnet tenant): delivered 7 October 2026. See
 `docs/sdp-setup.md` for the setup guide and `EVIDENCE.md` for the live run.

@@ -5,7 +5,9 @@ through the Stellar Disbursement Platform (SDP) with this bridge. No
 contact with Saleem is needed. Every command here was run from a clean
 clone on testnet; the runs are recorded in `EVIDENCE.md`.
 
-Testnet only. Nothing in this repository moves real money.
+Testnet is the only network this repository configures. Nothing in this
+repository moves real money. The network values come from the environment
+and every process asserts them at boot (`docs/sdp-setup.md`, section 9).
 
 ## What the bridge is
 
@@ -224,7 +226,12 @@ created on dial, paid by the sponsor in `.env`. `false` (the
 operator-provisioned posture): only numbers you provisioned are served; a
 number with no account sees "No account found for this number. Dial again
 to set up." (E3). Set `false` when recipients must have passed your
-identity and consent steps before they can hold funds.
+identity and consent steps before they can hold funds. `true` is accepted
+on testnet only: on any other network type the service refuses to start
+(exit code 2, naming the variable and the network), because creation on
+dial opens an account for whoever dials, with the sponsor's reserves, and
+the reference signer keeps no key for it; off testnet, recipients are
+provisioned by the operator with `npm run provision`.
 
 A creation whose submission gets no definitive answer (the 8 second dial
 deadline passes, Horizon answers a 5xx or no result codes) is not treated
@@ -262,8 +269,33 @@ creation and outgoing payments are skipped). No match shows "No payments
 received yet". An account whose last 200 operations hold no incoming USDC
 payment also shows that line; raise the scan depth in `accountView.ts` if
 your accounts are busier than that. Amounts are cut to two decimals, never
-rounded up; the date is the UTC date of the payment. Any Horizon failure
-within the budget shows "Service unavailable. Please try again later."
+rounded up; the date is the UTC date of the payment. A read that fails
+with a transport error (the runtime's fetch error, a socket or DNS error,
+the 2.5 second deadline) or a 5xx answer is tried once more after a 1
+second pause, if a full second attempt still fits the 7 second budget of
+the read; a 4xx answer is never retried (a 404 is "No account found", any
+other 4xx is a refusal Horizon has understood). The budget sits under the
+listener's 8.5 second busy screen and the gateway's 10 second limit, with
+the PIN verification and the response path in the same callback. Two
+failures, or any failure that cannot be retried, show "Service
+unavailable. Please try again later."; the service log line
+`event=viewFailed` then carries the attempt count, the error code, the
+HTTP status when there is one and the cause's code (for example
+`code=TypeError cause=ECONNRESET`), never any user data. Reason: on 11
+October 2026 one account read failed with a transport error and the same
+read succeeded 14 seconds later, so the caller saw E4 for a fault that was
+over by the next dial (`EVIDENCE.md`, "Finding while running").
+
+### The closing line (`USSD_CLOSING_LINE`)
+
+Screens 7 and 8 end with a closing line. Unset or blank, it is the
+contracted text, "Test only, no funds move". Any other value is a menu
+change that needs written notice to Africa's Talking before production
+(walkthrough section 7). At boot the service refuses a value that would
+push either screen past the 160 character budget at the account screen's
+longest values, or that carries a character outside printable ASCII (no
+line breaks, accents, symbols or emoji; telcos cannot render them). The
+refusal names the variable and exits with code 2.
 
 ### PINs
 
@@ -282,7 +314,9 @@ listener answers a busy screen at 8.5 seconds if work is still in flight,
 and the real answer is served from its cache to the gateway's retry. The
 sandbox ends a session after roughly 30 to 60 seconds without input
 (measured in the adapter's evidence, not quoted from documentation). PIN
-screens are local; the account screen is two reads under 2.5 seconds;
+screens are local; the account screen is two reads under 2.5 seconds,
+tried once more after a 1 second pause on a transport failure or a 5xx
+answer (worst case 6 seconds, budget 7 seconds);
 creation on dial is one Horizon submission (about 5 seconds measured),
 preceded by one read of the sponsor's balance for the cap.
 

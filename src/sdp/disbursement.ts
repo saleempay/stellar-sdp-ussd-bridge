@@ -33,6 +33,8 @@ export async function selectDistributionWalletId(client: SdpTenantClient, reques
 }
 
 export async function uploadDisbursementFile(client: SdpTenantClient, p: UploadDisbursementParams): Promise<UploadDisbursementResult> {
+  // Callers pass the configured network's issuer (scripts read it through
+  // assertNetwork); the testnet constant is only the default.
   const issuer = p.usdcIssuer ?? TESTNET_USDC_ISSUER;
   const usdc = (await client.listAssets()).find((a) => a.code === USDC_CODE && a.issuer === issuer);
   if (!usdc) throw new Error(`tenant ${client.tenantName} has no USDC asset with the expected issuer`);

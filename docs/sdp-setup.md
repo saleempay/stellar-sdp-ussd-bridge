@@ -6,7 +6,8 @@ wallet address, with receiver invitations switched off. It is written for a
 wallet provider or NGO with no contact with Saleem. Every command below was
 run from a clean clone on 7 October 2026 (see `EVIDENCE.md`).
 
-Testnet only. Nothing here moves real money.
+Testnet is the only network this repository configures. Nothing here moves
+real money; see section 9 for how the network values are read and asserted.
 
 ## 1. What you need
 
@@ -216,3 +217,114 @@ node scripts/capture-evidence.mjs
 The retest that produced the scoping and status evidence is
 `node scripts/retest-d1.mjs`; it writes `test-output/retest-d1.json` with
 every account masked.
+
+## 9. Network configuration, funding by hand, and multi-factor login
+
+Added 10 October 2026 (L2). None of this changes the testnet run above.
+
+### 9.1 Network values and the boot assertion
+
+The code reads five network values from the environment (`.env` for the
+bridge, `sdp/.env` for the SDP scripts): `NETWORK_TYPE`,
+`NETWORK_PASSPHRASE`, `HORIZON_URL`, `ASSET_ISSUER` and
+`EXPLORER_BASE_URL` (`src/sdp/network.ts`). The testnet values are the
+defaults and the only network literals in the repository.
+
+Every process that touches Horizon or the SDP runs the boot assertion
+first (`assertNetwork`): the USSD service, `npm run provision`,
+`sdp:up`/`sdp:check`, `sdp:upload`, `sdp:batch` and the two setup scripts.
+
+- `NETWORK_TYPE` unset or `testnet`: each value that is set must equal the
+  testnet value. A mixed configuration (for example a different
+  `HORIZON_URL` with the testnet passphrase) is refused.
+- any other `NETWORK_TYPE`: every value must be supplied, none may equal a
+  testnet value, and `BRIDGE_ACKNOWLEDGE_REAL_FUNDS` must read exactly
+  `yes`. The repository supplies none of those values.
+
+A refusal exits with code 2 and names each missing or mismatched variable,
+for example `HORIZON_URL does not equal the testnet value`. Values are not
+echoed. Readiness step 8 (`usdc asset`) checks the configured issuer, the
+upload uses it to pick the asset, and explorer links are built from
+`EXPLORER_BASE_URL`.
+
+### 9.2 Generating accounts without Friendbot
+
+`npm run sponsor:setup -- --no-fund` and `npm run sdp:accounts -- --no-fund`
+generate and write the env file exactly as before but call no faucet. Each
+prints the masked account and its explorer link from the configured
+network, so the account can be funded by hand and checked. The run record
+in `test-output/` carries `funded: false`. Friendbot exists on testnet
+only (developers.stellar.org/docs/networks, "Friendbot Available").
+
+### 9.3 Multi-factor login
+
+`sdp/docker-compose.yml` runs the SDP with `DISABLE_MFA` from `sdp/.env`,
+default `true` (unchanged behaviour). With `DISABLE_MFA=false` the SDP
+emails a verification code at login and answers `POST /login` with a
+message instead of a token (`internal/serve/httphandler/login_handler.go`
+at 7.0.0: the `Device-ID` header is required, lines 59 to 60; the token is
+returned directly when MFA is disabled or the device is remembered, lines
+130 to 132; otherwise the code is emailed and a message returned, lines
+133 to 137 and 163 to 173). The token then comes from `POST /mfa` with
+`{mfa_code, remember_me}` and the same `Device-ID` header
+(`internal/serve/httphandler/mfa_handler.go`: request shape lines 18 to
+22, header lines 35 and 48, verification line 92, token line 112; route at
+`internal/serve/serve.go:838`).
+
+The bridge's client (`SdpTenantClient.login`) handles both answers. When a
+code is required it asks the operator on standard input (`promptMfaCode`,
+`src/sdp/mfaPrompt.ts`); the code is never read from a file, a flag or a
+variable, and never logged. With MFA disabled the flow is a single request
+as before.
+
+Two switches, not one. The SDP decides per organisation first: when the
+organisation row carries a value in `mfa_disabled`, that value wins and
+the `DISABLE_MFA` environment flag is only the fallback
+(`internal/serve/httphandler/auth_utils.go:36-47`; the nullable column
+comes from `db/migrations/sdp-migrations/2025-09-10.0-add-org-level-mfa-captcha-settings.sql`,
+model `internal/data/organizations.go:55`). The row gets its first value
+when the tenant is created: the admin API handler copies the admin
+server's `DISABLE_MFA` flag into the provisioning request
+(`stellar-multitenant/internal/httphandler/tenants_handler.go:116` and
+`:129`, `orgMFADisabled := h.DisableMFA` passed as `MFADisabled`), the
+admin server takes that flag from the same `DISABLE_MFA` option as the API
+(`cmd/serve.go:321,727`), and the provisioning manager writes it to the
+new tenant's organisation row together with the name
+(`stellar-multitenant/internal/provisioning/manager.go:341-346`,
+`models.Organizations.Update`). The two tenants were created while the
+stack ran with `DISABLE_MFA=true`, so both rows read `mfa_disabled: true`,
+and flipping the environment flag afterwards changes nothing for them.
+
+The bridge handles this in two ways (L2 fix round, 10 October 2026):
+
+- Readiness step `mfa setting`, after the owner login. On testnet it
+  reports the organisation's value and changes nothing. On any other
+  network it requires `mfa_disabled` to be `false`: when it is `true` (or
+  absent) the step sets it to `false`, logs in again (the SDP now asks for
+  the emailed code) and reads the value back.
+- Strict client mode on any other network (`strictMfa`, derived from
+  `NETWORK_TYPE`): the client never asks the SDP to remember the device
+  (`remember_me` is always `false`), and a token the SDP issued without a
+  code may be used for exactly one call, the `PATCH /organization` that
+  sets `mfa_disabled` to `false`. Every other call with such a token is
+  refused before it reaches the wire (`MfaRequiredError`). On testnet
+  nothing changes.
+
+To require a code on this local stack by hand: set `DISABLE_MFA=false` in
+`sdp/.env`, recreate `sdp-api`, and set `mfa_disabled` to `false` on the
+organisation (`PATCH /organization`, multipart field `data`).
+
+Live check, 10 October 2026, 18:28 UTC, local testnet stack: with both
+switches set as above and the dry-run email sender, `npm run sdp:check`
+logged in to the bridge tenant. The SDP answered `POST /login` with the
+"MFA code sent" message, printed the verification email in the `sdp-api`
+container log ("Your verification code is:", the dry-run sender,
+`internal/message/dry_run_client.go:17-21`), the bridge asked for the code
+on standard input, the operator typed the six digits read from the log,
+`POST /mfa` returned 200 with the token, and every readiness step
+reported `already` or `ok`. The scope test tenant, whose organisation
+kept `mfa_disabled: true`, logged in with a single request in the same
+run. Afterwards the organisation flag and `DISABLE_MFA=true` were
+restored and `sdp-api` recreated. The dry-run sender does expose the
+code, so no offline-only fallback was needed.
+

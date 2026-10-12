@@ -58,7 +58,7 @@ services:
       EMAIL_SENDER_TYPE: DRY_RUN
       SMS_SENDER_TYPE: DRY_RUN
       SEP10_CLIENT_ATTRIBUTION_REQUIRED: "true"
-      DISABLE_MFA: "true"
+      DISABLE_MFA: "${DISABLE_MFA:-true}"
       DISABLE_RECAPTCHA: "true"
       CORS_ALLOWED_ORIGINS: "*"
       INSTANCE_NAME: "${INSTANCE_NAME:-SDP USSD bridge (testnet)}"

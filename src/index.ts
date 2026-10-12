@@ -8,6 +8,8 @@ export * from './sdp/client.js';
 export * from './sdp/readiness.js';
 export * from './sdp/env.js';
 export * from './sdp/resetToken.js';
+export * from './sdp/network.js';
+export * from './sdp/mfaPrompt.js';
 
 /** Deliverable 2: the recipient provisioning bridge. */
 export * from './provision/index.js';

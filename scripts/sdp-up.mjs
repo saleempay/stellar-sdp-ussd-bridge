@@ -20,6 +20,7 @@ import {
   dashboardUrlFor,
   formatReport,
   loadEnvFile,
+  promptMfaCode,
   provisionTenant,
   readinessConfigFor,
   sdpConfigFromEnv,
@@ -48,7 +49,7 @@ if (!checkOnly) {
 }
 
 const admin = new SdpAdminClient({ baseUrl: cfg.adminUrl, adminAccount: cfg.adminAccount, adminApiKey: cfg.adminApiKey });
-const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: name });
+const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: name, strictMfa: cfg.strictMfa });
 
 /**
  * Read the password reset token from the SDP API container log. With
@@ -92,6 +93,9 @@ const deps = {
   admin,
   tenantClient,
   readResetToken,
+  // With MFA enabled on the stack the SDP emails a code at login; the
+  // operator types it here. Nothing happens with MFA disabled.
+  mfaCode: promptMfaCode(),
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
 };
