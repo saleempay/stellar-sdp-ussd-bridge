@@ -1,0 +1,125 @@
+{
+  "run": "2026-10-07T12-45-30-981Z",
+  "port": 8085,
+  "exchanges": [
+    {
+      "at": "2026-10-07T12:46:39.780Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_0951c0b233a0a17ebed08bf7c333651f",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 24
+    },
+    {
+      "at": "2026-10-07T12:46:56.921Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_0951c0b233a0a17ebed08bf7c333651f",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Create a 4 digit PIN",
+      "serverMs": 7
+    },
+    {
+      "at": "2026-10-07T12:47:10.299Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_0951c0b233a0a17ebed08bf7c333651f",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter the PIN again",
+      "serverMs": 3
+    },
+    {
+      "at": "2026-10-07T12:47:14.531Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_0951c0b233a0a17ebed08bf7c333651f",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GADZ..HMBZ\nBalance 0.00 USDC\nNo payments received yet\nTest only, no funds move",
+      "serverMs": 2458
+    },
+    {
+      "at": "2026-10-07T12:47:32.733Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "",
+        "sessionId": "ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Saleem\n1. My account\n2. About",
+      "serverMs": 2
+    },
+    {
+      "at": "2026-10-07T12:47:37.900Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1",
+        "sessionId": "ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Enter your PIN",
+      "serverMs": 3
+    },
+    {
+      "at": "2026-10-07T12:47:42.044Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1*####",
+        "sessionId": "ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "CON Wrong PIN. 2 attempts left\nEnter your PIN",
+      "serverMs": 97
+    },
+    {
+      "at": "2026-10-07T12:47:52.976Z",
+      "fields": {
+        "phoneNumber": "+2547***5333",
+        "serviceCode": "*384*45210#",
+        "text": "1*####*####",
+        "sessionId": "ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a",
+        "networkCode": "99999"
+      },
+      "status": 200,
+      "response": "END Signed in as GADZ..HMBZ\nBalance 0.00 USDC\nNo payments received yet\nTest only, no funds move",
+      "serverMs": 946
+    }
+  ],
+  "events": [
+    "2026-10-07T12:46:39.800Z session=ATUid_0951c0b233a0a17ebed08bf7c333651f event=start state=welcome",
+    "2026-10-07T12:46:56.928Z session=ATUid_0951c0b233a0a17ebed08bf7c333651f event=step state=welcome>pinSetup1",
+    "2026-10-07T12:47:10.301Z session=ATUid_0951c0b233a0a17ebed08bf7c333651f event=step state=pinSetup1>pinSetup2",
+    "2026-10-07T12:47:14.639Z session=ATUid_0951c0b233a0a17ebed08bf7c333651f event=pinSaved",
+    "2026-10-07T12:47:16.988Z session=ATUid_0951c0b233a0a17ebed08bf7c333651f event=accountScreen path=provisioned hasLastReceived=false",
+    "2026-10-07T12:47:16.989Z session=ATUid_0951c0b233a0a17ebed08bf7c333651f event=step state=pinSetup2>done",
+    "2026-10-07T12:47:32.734Z session=ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a event=start state=welcome",
+    "2026-10-07T12:47:37.903Z session=ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a event=step state=welcome>pinEnter",
+    "2026-10-07T12:47:42.140Z session=ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a event=pinRejected left=2",
+    "2026-10-07T12:47:42.140Z session=ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a event=step state=pinEnter>pinEnter",
+    "2026-10-07T12:47:53.127Z session=ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a event=pinVerified",
+    "2026-10-07T12:47:53.921Z session=ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a event=accountScreen path=returning hasLastReceived=false",
+    "2026-10-07T12:47:53.921Z session=ATUid_0cc8d5f6f9e60b76fbec3e8e35efa84a event=step state=pinEnter>done"
+  ]
+}
