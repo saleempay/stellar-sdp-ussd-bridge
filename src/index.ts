@@ -19,6 +19,9 @@ export * from './sdp/disbursement.js';
 export * from './ussd/index.js';
 export * from './sdp/batch.js';
 
+/** L4a: a signer injected from outside this repository. */
+export * from './signer/index.js';
+
 /** L3: caps and batch guards. */
 export * from './sdp/caps.js';
 export * from './sdp/batchGuards.js';

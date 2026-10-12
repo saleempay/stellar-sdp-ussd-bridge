@@ -96,7 +96,16 @@ What is stored: the adapter's PIN store holds a salted scrypt hash
   party can run the flow on testnet, and it makes every account it
   creates receive-only (see above). A deployment supplies a `Signer`
   whose keys live in its own protected boundary before any flow that
-  signs for a recipient account.
+  signs for a recipient account. Since 10 October 2026 it
+  can do so without changing this repository: `BRIDGE_SIGNER_MODULE` names
+  an ES module of the deployment's own that exports `createSigner` (or a
+  default export) returning an object implementing the adapter's `Signer`
+  interface; `npm run provision` and the USSD service check the object at
+  boot and refuse anything that does not implement `createAccountKey`,
+  `canSignFor` and `signTransaction`. With an injected signer,
+  `SPONSOR_PUBLIC_KEY` names the sponsor, the signer must be able to sign
+  for it, and no sponsor secret may be in the environment. No signer
+  implementation other than the adapter's reference signer lives here.
 - **The stores.** The account store links phone numbers to accounts and
   the PIN store gates signing. Both are personal data and authentication
   data; protect and back them up as such. The reference stores are JSON
