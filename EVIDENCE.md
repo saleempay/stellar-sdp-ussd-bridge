@@ -918,11 +918,11 @@ unchanged.
 
 Approvals: ismo90 approved #2, #3, #4 and #5 on 12 October (#5 at
 `9c8fee5`, after verifying the last finding's fix), and #1 at 12:23 UTC.
-The repository's stale-approval rule dismisses an approval when new
-commits are added to the pull request's branch, so his approval of #4
-was dismissed when #5 merged into d4-batch-evidence, the branch of #4,
-and his approval of #1 when #2 merged into d1-sdp-testnet-tenant, the
-branch of #1. rasoliman approved #5, #3 and
+GitHub dismissed two of his approvals automatically when new commits
+were added to the pull request's branch: the approval of #4 when #5
+merged into d4-batch-evidence, and the approval of #1 when #2 merged
+into d1-sdp-testnet-tenant. The second follows from the protection rule
+on main, which dismisses stale approvals. rasoliman approved #5, #3 and
 #2 that afternoon, approved #4 again after the dismissal, and approved #1
 at 17:24 UTC; #1 was merged on his approval. A GitHub incident affecting
 Actions, Pull Requests and Issues that afternoon delayed the display of
