@@ -18,8 +18,10 @@ every PIN as `####`. Transaction hashes are complete.
 
 Verification: every link, hash, ledger number, operation and amount below
 was re-checked against Horizon (horizon-testnet.stellar.org), stellar.expert
-and GitHub on **10 October 2026**; nothing had moved. The CSV checksum in
-row 2.2 was recomputed the same day and matches.
+and GitHub on 10 October, on 12 October and again on **17 October 2026**;
+nothing had moved. On 17 October each recipient account's USDC balance on
+Horizon equalled the amount paid to it in row 4.2. The CSV checksum in
+row 2.2 was recomputed on 17 October and matches.
 
 ## Deliverable 1: SDP testnet tenant for basic-phone recipients
 
@@ -65,6 +67,6 @@ row 2.2 was recomputed the same day and matches.
 
 | # | What to check | How | Expected |
 |---|---|---|---|
-| 5.1 | Offline checks on every pull request | open the Actions tab of the repository | `install, typecheck, offline tests, secret scan` green on PRs #1, #2, #3, #4 |
+| 5.1 | Offline checks on every pull request | open the Actions tab of the repository | `install, typecheck, offline tests, secret scan` green on PRs #1, #2, #3, #4 and on the fix round #5 |
 | 5.2 | Adapter dependency, pinned | `git submodule status` | one line naming `vendor/stellar-ussd-sep10-adapter` at commit `4c235f87c6af45a7c6043fe16b5eb246e148555f`, the merge of adapter pull request #15 |
 | 5.3 | The one adapter change | open [saleempay/stellar-ussd-sep10-adapter pull request #15](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/15) and the note in [pull request #17](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/17) | one optional field on the listener; its review and fix round; approved and merged 7 October as `4c235f87` (a merge commit with the default message; #17 records this, content identical to the approved commit) |
