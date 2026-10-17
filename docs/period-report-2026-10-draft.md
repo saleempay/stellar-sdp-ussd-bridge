@@ -1,20 +1,20 @@
-# Period report: Stellar Instaward Application 2 (progress, 12 October 2026)
+# Period report: Stellar Instaward Application 2 (progress, 17 October 2026)
 
 Prepared for the Chapter Lead by 5 Lanes Limited (Saleem) as a progress
-report after the merges of 12 October. Everything in it is true as of
-12 October 2026, evening. Plain English; every claim links to a file in this repository, to
-GitHub, or to the Stellar test network.
+report. Everything in it is true as of 17 October 2026. Plain English;
+every claim links to a file in this repository, to GitHub, or to the
+Stellar test network.
 
 ## Period and start
 
 The statement of work runs from 5 October to 3 November 2026, with the
 work planned to complete by 16 October. Work started on 7 October 2026,
 after the application's confirmation, and the four deliverables were
-built on that day. Everything is on the Stellar test network; the next
-scheduled testnet reset is 16 December 2026 (developers.stellar.org,
-"Testnet and Futurenet data reset", read 7 October 2026), after which the
-network links in the evidence stop resolving while the copied ledger
-records remain.
+built on that day. The code was reviewed, fixed and merged on 12 October.
+Everything is on the Stellar test network; the next scheduled testnet
+reset is 16 December 2026 (developers.stellar.org, "Testnet and Futurenet
+data reset", read 7 October 2026), after which the network links in the
+evidence stop resolving while the copied ledger records remain.
 
 ## What was delivered
 
@@ -29,7 +29,7 @@ with the evidence record in
 and the checklist in
 [`docs/instaward-evidence-package.md`](https://github.com/saleempay/stellar-sdp-ussd-bridge/blob/main/docs/instaward-evidence-package.md).
 
-| Deliverable | State on 12 October | Evidence |
+| Deliverable | State on 17 October | Evidence |
 |---|---|---|
 | 1. SDP 7.0.0 testnet tenant for basic-phone recipients | Built, reviewed, fixed and merged into main on 12 October ([pull request #1](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/1), merge commit `70d0117`) | one-command setup on the published 7.0.0 images; dashboard screenshots of the USDC asset, invitations off and the wallet-address contact type; the scoping and status retest |
 | 2. Recipient provisioning bridge | Built, reviewed, fixed and merged on 12 October ([pull request #2](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/2), merge commit `a03e8c0`) | five accounts created with trustlines in one sponsored transaction each, hashes on stellar.expert; the disbursement file; a second run that changes nothing; the file accepted by the SDP |
@@ -65,10 +65,10 @@ and the checklist in
   d3-ussd-balance-view at 17:22, `c4f5734`; #3 into
   d2-provisioning-bridge at 17:23, `e60bbda`; #2 into
   d1-sdp-testnet-tenant at 17:24, `a03e8c0`; #1 into main at 17:25,
-  `70d0117`. main now holds every deliverable with the fixes of #5. A
-  GitHub incident affecting Actions, Pull Requests and Issues that
-  afternoon delayed the display of pull request states; the merges
-  completed in that order.
+  `70d0117`. The records of that day were merged as
+  [pull request #7](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/7)
+  (`5558b66`). main holds every deliverable with the fixes of #5. No
+  change has been made to the delivered code since 12 October.
 - **The adapter (Application 1).** The one change the bridge needed on
   the adapter, [pull request #15](https://github.com/saleempay/stellar-ussd-sep10-adapter/pull/15),
   was approved by Ismael and merged on 7 October. It was merged as a
@@ -79,7 +79,7 @@ and the checklist in
   approved by Ismael on 7 October and merged on 12 October as `03b50c9`.
   The bridge pins the adapter to the merge commit, `4c235f87`, which has
   the same content as the approved commit (`EVIDENCE.md`, "Deliverable 4,
-  part 4").
+  part 4"). The adapter's main branch has not moved since.
 
 ## Evidence rows
 
@@ -91,15 +91,23 @@ service on the pinned adapter (`EVIDENCE.md`, "2026-10-11: Deliverable 4,
 part 3, third attempt"). The dials that failed on 7 and 10 October failed
 because the gateway dashboard held the hostname of an earlier quick
 tunnel, which changes on every start; there was no gateway fault
-(`EVIDENCE.md`, "2026-10-11: correction"). Every transaction hash, ledger
-number, operation and amount in the package was re-checked against
-Horizon and stellar.expert on 12 October 2026 and nothing had moved.
+(`EVIDENCE.md`, "2026-10-11: correction").
+
+On 17 October 2026 every transaction hash, ledger number, operation and
+amount in the package was re-checked against Horizon and stellar.expert:
+the five account creations (ledgers 5068901 to 5068905, four operations
+each), the five payments (ledgers 5071608 to 5071614, one USDC payment
+each) and the faucet funding all resolve and nothing has moved; each
+recipient account's USDC balance on Horizon equals the amount paid to it;
+the checksum of the committed disbursement file matches row 2.2; and the
+GitHub links resolve. The package records this date.
 
 **Video.** One clip exists: the 27 second recording of a first-use
 session on the sandbox simulator
 (`docs/evidence/d3-ussd-provisioned-path-r5-2026-10-07.mp4`, 7 October).
-The demo video cut of the five sessions after the batch remains to be
-made from the captured sessions.
+The demo video cut of the five sessions after the batch, planned by
+16 October, has not yet been made from the sessions captured on
+11 October; the shot list is in `docs/demo-video-plan.md`.
 
 ## The batch, in one paragraph
 
@@ -108,7 +116,7 @@ recipients, 12.50 USDC) was started through the SDP's API. All five
 payments succeeded by 14:01:06 UTC. Each is a single USDC payment on the
 test network from the tenant's distribution account to the recipient's
 account, with its hash linked on stellar.expert, and each recipient's
-balance on the ledger now equals the amount in the file.
+balance on the ledger equals the amount in the file.
 
 ## Findings worth the Chapter's attention
 
@@ -144,13 +152,35 @@ balance on the ledger now equals the amount in the file.
    state" for the merge message and the note in #17, merged on
    12 October). The bridge pins the adapter to the merge commit.
 
+## Planned after Application 2: a closed-loop run on mainnet
+
+5 Lanes plans a closed-loop run of this same bridge on Stellar mainnet,
+with its own company funds, to be shown at Meridian in Lisbon on 28 and
+29 October 2026. It is outside the Instaward and comes after Application
+2's evidence. Every account involved belongs to 5 Lanes Limited and is
+bound to a SIM held by a member of the team; no third party sends or
+receives funds; the USSD menu stays read-only; the amounts are small and
+capped in code and by funding. The public repository receives only
+changes that work on any network and carry no mainnet value, each as a
+reviewed pull request: three such preparatory pull requests are open as
+drafts ([#8](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/8)
+network facts from the environment and a boot check,
+[#9](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/9)
+amount caps and batch guards,
+[#10](https://github.com/saleempay/stellar-sdp-ussd-bridge/pull/10)
+a signer supplied from outside the repository), reviewed by Ismael on
+13 October, and are not for merge until Application 2 is verified. The
+run has its own design proposal and evidence plan, held outside this
+repository, and nothing moves on mainnet before 5 Lanes rules on them.
+
 ## What remains
 
 | Item | Date |
 |---|---|
-| The demo video cut of the five USSD sessions after the batch, from the sessions captured on 11 October | by 16 October |
+| The demo video cut of the five USSD sessions after the batch, from the sessions captured on 11 October | planned by 16 October; not yet made; new date to be confirmed by 5 Lanes |
 | Close of the statement-of-work window | 3 November |
 
-Everything else in the statement of work is delivered and merged. Four
-days remain to the planned completion date of 16 October and 22 to the
-end of the statement-of-work window on 3 November.
+Everything else in the statement of work is delivered and merged. The
+planned completion date of 16 October has passed with the code complete
+and merged since 12 October and the video cut outstanding; 17 days remain
+to the end of the statement-of-work window on 3 November.
