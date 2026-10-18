@@ -109,7 +109,7 @@ try {
 // 13 October, pull request #10, finding 2).
 let signing;
 try {
-  signing = await sponsorSigning(env, await loadInjectedSigner(env));
+  signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase });
 } catch (e) {
   console.error(e instanceof SignerConfigError ? e.message : String(e));
   process.exit(2);

@@ -11,6 +11,7 @@
  * added here.
  */
 import { pathToFileURL } from 'node:url';
+import { Account, BASE_FEE, Keypair, Operation, TransactionBuilder } from '@stellar/stellar-sdk';
 import { isAbsolute, resolve } from 'node:path';
 import { LocalKeypairSigner, type Signer } from 'stellar-ussd-sep10-adapter';
 
@@ -84,6 +85,37 @@ export interface SponsorSigning {
   sponsorPublicKey: string;
   /** true when the signer came from BRIDGE_SIGNER_MODULE. */
   injected: boolean;
+  /** true when the injected signer's signature over a throwaway envelope verified against the sponsor key. */
+  selfTested: boolean;
+}
+
+export interface SponsorSigningOptions {
+  /**
+   * When given, an injected signer is made to sign a throwaway envelope for
+   * the sponsor (one ManageData operation, sequence 0, never submitted) and
+   * the signature is verified against SPONSOR_PUBLIC_KEY, so `canSignFor` is
+   * checked rather than reported (review of 13 October 2026, minor). The
+   * reference signer needs no self-test: it derives the public key from the
+   * secret it imports.
+   */
+  networkPassphrase?: string;
+}
+
+/** The self-test envelope: one operation, sequence 0, no time bounds; it can never be submitted. */
+export function selfTestEnvelope(sponsorPublicKey: string, networkPassphrase: string): string {
+  return new TransactionBuilder(new Account(sponsorPublicKey, '0'), { fee: BASE_FEE, networkPassphrase })
+    .addOperation(Operation.manageData({ name: 'bridge self-test', value: 'never submitted' }))
+    .setTimeout(0)
+    .build()
+    .toXDR();
+}
+
+/** Whether the signed envelope carries a signature by `publicKey` over its own hash. */
+export function envelopeSignedBy(signedXdr: string, publicKey: string, networkPassphrase: string): boolean {
+  const tx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
+  const kp = Keypair.fromPublicKey(publicKey);
+  const hash = tx.hash();
+  return tx.signatures.some((s) => kp.signatureHint().equals(s.hint()) && kp.verify(hash, s.signature()));
 }
 
 /**
@@ -96,7 +128,7 @@ export interface SponsorSigning {
  * `canSignFor(sponsor)`, and SPONSOR_SECRET_KEY must not be present: a raw
  * sponsor secret has no place next to a signer that holds the keys.
  */
-export async function sponsorSigning(env: EnvLike, injected?: Signer): Promise<SponsorSigning> {
+export async function sponsorSigning(env: EnvLike, injected?: Signer, opts: SponsorSigningOptions = {}): Promise<SponsorSigning> {
   const publicKey = (env.SPONSOR_PUBLIC_KEY ?? '').trim();
   const secretKey = (env.SPONSOR_SECRET_KEY ?? '').trim();
   if (injected) {
@@ -104,7 +136,20 @@ export async function sponsorSigning(env: EnvLike, injected?: Signer): Promise<S
     if (!publicKey) throw new SignerConfigError('SPONSOR_PUBLIC_KEY is required when a signer is injected');
     if (secretKey) throw new SignerConfigError('SPONSOR_SECRET_KEY must not be set when a signer is injected; the injected signer holds the sponsor key');
     if (!(await injected.canSignFor(publicKey))) throw new SignerConfigError(`the injected signer cannot sign for the sponsor account ${publicKey.slice(0, 4)}...${publicKey.slice(-4)}`);
-    return { signer: injected, sponsorPublicKey: publicKey, injected: true };
+    let selfTested = false;
+    if (opts.networkPassphrase) {
+      let signed: string;
+      try {
+        signed = await injected.signTransaction(selfTestEnvelope(publicKey, opts.networkPassphrase), { networkPassphrase: opts.networkPassphrase, accountId: publicKey });
+      } catch (cause) {
+        throw new SignerConfigError(`the injected signer reports it can sign for the sponsor but failed to sign the self-test envelope: ${(cause as Error).message}`);
+      }
+      let verified = false;
+      try { verified = envelopeSignedBy(signed, publicKey, opts.networkPassphrase); } catch { verified = false; }
+      if (!verified) throw new SignerConfigError(`the injected signer reports it can sign for the sponsor account ${publicKey.slice(0, 4)}...${publicKey.slice(-4)} but its signature over the self-test envelope does not verify against SPONSOR_PUBLIC_KEY`);
+      selfTested = true;
+    }
+    return { signer: injected, sponsorPublicKey: publicKey, injected: true, selfTested };
   }
   if (!secretKey) throw new SignerConfigError('SPONSOR_SECRET_KEY missing (run npm run sponsor:setup, or inject a signer with BRIDGE_SIGNER_MODULE)');
   const signer = new LocalKeypairSigner();
@@ -115,5 +160,5 @@ export async function sponsorSigning(env: EnvLike, injected?: Signer): Promise<S
     throw new SignerConfigError('SPONSOR_SECRET_KEY is not a valid secret key');
   }
   if (publicKey && publicKey !== derived) throw new SignerConfigError('SPONSOR_PUBLIC_KEY does not match SPONSOR_SECRET_KEY');
-  return { signer, sponsorPublicKey: derived, injected: false };
+  return { signer, sponsorPublicKey: derived, injected: false, selfTested: false };
 }
