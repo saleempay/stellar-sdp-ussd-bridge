@@ -41,6 +41,7 @@ import {
   USDC_CODE,
   accountCeilingReason,
   capsFromEnv,
+  compareAmounts,
   disbursementCapReasons,
   formatBatchReport,
   guardBatchStart,
@@ -98,7 +99,7 @@ const ceiling = accountCeilingReason(usdc, caps);
 if (ceiling) { console.error(`refused: ${ceiling}`); process.exit(3); }
 
 if (checkOnly) {
-  console.log(Number(usdc) >= Number(total) ? 'balance covers the total' : 'balance does NOT cover the total');
+  console.log(compareAmounts(usdc, total) >= 0 ? 'balance covers the total' : 'balance does NOT cover the total');
   console.log(`balance within the ${caps.maxAccountUsdc} USDC ceiling; every payment within ${caps.maxPaymentUsdc} USDC and the total within ${caps.maxBatchUsdc} USDC`);
   try {
     const seen = await guardBatchStart({ client, walletId, walletIds: accounts.map((a) => a.id), disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
