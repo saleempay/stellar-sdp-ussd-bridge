@@ -24,6 +24,7 @@ import {
   sdpConfigFromEnv,
   selectDistributionWalletId,
   totalAmount,
+  verifyHorizonNetwork,
 } from '../dist/index.js';
 
 const args = process.argv.slice(2);
@@ -34,6 +35,7 @@ const checkOnly = args.includes('--check-only');
 const skipStart = args.includes('--skip-start');
 const timeoutMs = Number(opt('--timeout-minutes') ?? 10) * 60_000;
 const cfg = sdpConfigFromEnv(loadEnvFile('sdp/.env'));
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(e.message); process.exit(2); }
 const asset = { code: USDC_CODE, issuer: cfg.network.assetIssuer };
 const tenant = cfg.tenants[0];
 const anon = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name, strictMfa: cfg.strictMfa });

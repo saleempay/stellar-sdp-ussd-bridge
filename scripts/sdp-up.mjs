@@ -24,6 +24,7 @@ import {
   provisionTenant,
   readinessConfigFor,
   sdpConfigFromEnv,
+  verifyHorizonNetwork,
 } from '../dist/index.js';
 
 const ENV_PATH = 'sdp/.env';
@@ -41,6 +42,9 @@ try {
 } catch (e) {
   fail(e instanceof ConfigError ? e.message : String(e), 2);
 }
+
+// Live half of the boot assertion: the configured Horizon must report the configured passphrase.
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { fail(e.message, 2); }
 
 if (!checkOnly) {
   console.log('docker compose up -d ...');

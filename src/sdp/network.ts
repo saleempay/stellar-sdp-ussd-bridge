@@ -129,3 +129,50 @@ export function explorerTxUrl(facts: NetworkFacts, hash: string): string {
 export function explorerAccountUrl(facts: NetworkFacts, accountId: string): string {
   return `${base(facts)}/account/${accountId}`;
 }
+
+/** The subset of fetch the Horizon check needs; injectable for tests. */
+export type HorizonFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+export interface HorizonCheckOptions {
+  fetch?: HorizonFetch;
+  timeoutMs?: number;
+}
+
+export const DEFAULT_HORIZON_CHECK_TIMEOUT_MS = 10_000;
+
+/**
+ * The live half of the boot assertion (fix round of 18 October 2026). The
+ * string checks above cannot tell a testnet mirror, a trailing slash or a
+ * different-case host from another network; Horizon can. Its root document
+ * carries `network_passphrase`, so one GET makes HORIZON_URL and
+ * NETWORK_PASSPHRASE coherent by construction, on every network, testnet
+ * included. Any failure to read it is a refusal (fail closed). Returns the
+ * passphrase Horizon reported. Values are not echoed in the message.
+ */
+export async function verifyHorizonNetwork(facts: NetworkFacts, opts: HorizonCheckOptions = {}): Promise<string> {
+  const fetchImpl: HorizonFetch = opts.fetch ?? ((input, init) => fetch(input, init));
+  const url = `${facts.horizonUrl.replace(/\/+$/, '')}/`;
+  const name = `${NETWORK_ENV.horizonUrl} root`;
+  let res: Response;
+  try {
+    res = await fetchImpl(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_HORIZON_CHECK_TIMEOUT_MS) });
+  } catch (e) {
+    const kind = e instanceof Error ? e.name : 'error';
+    throw new NetworkConfigError([`${name} did not answer (${kind}); its network_passphrase could not be compared with ${NETWORK_ENV.networkPassphrase}`]);
+  }
+  if (!res.ok) throw new NetworkConfigError([`${name} answered HTTP ${res.status}; its network_passphrase could not be compared with ${NETWORK_ENV.networkPassphrase}`]);
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    throw new NetworkConfigError([`${name} did not answer with a JSON document; its network_passphrase could not be compared with ${NETWORK_ENV.networkPassphrase}`]);
+  }
+  const reported = (body as { network_passphrase?: unknown } | null)?.network_passphrase;
+  if (typeof reported !== 'string' || reported === '') {
+    throw new NetworkConfigError([`${name} carries no network_passphrase field; ${NETWORK_ENV.horizonUrl} does not look like a Horizon server`]);
+  }
+  if (reported !== facts.networkPassphrase) {
+    throw new NetworkConfigError([`${NETWORK_ENV.horizonUrl} serves a different network than ${NETWORK_ENV.networkPassphrase} names: the Horizon root's network_passphrase does not match; the two must belong to the same network`]);
+  }
+  return reported;
+}

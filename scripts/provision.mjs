@@ -40,6 +40,7 @@ import {
   partialSidecarPath,
   provisionRecipients,
   sha256Hex,
+  verifyHorizonNetwork,
   writeSdpCsv,
 } from '../dist/index.js';
 
@@ -93,7 +94,9 @@ const deps = {
   paymentIdPrefix: basename(input).replace(/\.csv$/i, ''),
 };
 
-console.log(`network ${network.networkType}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows, data in ${dataDir}/`);
+// Live half of the boot assertion: Horizon's root must report the configured passphrase.
+try { await verifyHorizonNetwork(network, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+console.log(`network ${network.networkType} (Horizon root confirms the passphrase), sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows, data in ${dataDir}/`);
 let report;
 try {
   report = await provisionRecipients(rows, deps);

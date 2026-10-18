@@ -14,7 +14,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { SdpTenantClient, loadEnvFile, partialSidecarPath, promptMfaCode, readPartialSidecar, sdpConfigFromEnv, sha256Hex, uploadDisbursementFile } from '../dist/index.js';
+import { NetworkConfigError, SdpTenantClient, loadEnvFile, partialSidecarPath, promptMfaCode, readPartialSidecar, sdpConfigFromEnv, sha256Hex, uploadDisbursementFile, verifyHorizonNetwork } from '../dist/index.js';
 
 const args = process.argv.slice(2);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
@@ -35,6 +35,7 @@ if (sidecar) {
 }
 
 const cfg = sdpConfigFromEnv(loadEnvFile('sdp/.env'));
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
 const tenant = cfg.tenants[0];
 const anon = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name, strictMfa: cfg.strictMfa });
 const client = await anon.authenticate(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() });

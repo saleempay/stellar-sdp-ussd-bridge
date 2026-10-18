@@ -243,7 +243,16 @@ first (`assertNetwork`): the USSD service, `npm run provision`,
 
 A refusal exits with code 2 and names each missing or mismatched variable,
 for example `HORIZON_URL does not equal the testnet value`. Values are not
-echoed. Readiness step 8 (`usdc asset`) checks the configured issuer, the
+echoed.
+
+The live half (fix round of 18 October 2026, `verifyHorizonNetwork`): the
+string checks cannot tell a testnet mirror, a trailing slash or a
+different-case host from another network, so after them every process
+that uses Horizon (`provision`, `sdp:up`/`sdp:check`, `sdp:upload`,
+`sdp:batch`, the USSD capture service) reads the Horizon root document
+and refuses unless its `network_passphrase` equals `NETWORK_PASSPHRASE`.
+This runs on every network, testnet included, and fails closed when
+Horizon does not answer. Readiness step 8 (`usdc asset`) checks the configured issuer, the
 upload uses it to pick the asset, and explorer links are built from
 `EXPLORER_BASE_URL`.
 

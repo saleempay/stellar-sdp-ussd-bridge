@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { fakeFetch } from './helpers.js';
 import { TESTNET_EXPLORER_BASE_URL, TESTNET_HORIZON_URL, TESTNET_NETWORK_PASSPHRASE, TESTNET_USDC_ISSUER } from '../../src/sdp/facts.js';
 import {
   NETWORK_ENV,
@@ -10,6 +11,7 @@ import {
   explorerTxUrl,
   networkFacts,
   networkTypeOf,
+  verifyHorizonNetwork,
 } from '../../src/sdp/network.js';
 
 /** Made-up values for a network that is not testnet; nothing here names a real network. */
@@ -150,5 +152,49 @@ describe('assertNetwork on a network other than testnet', () => {
     const err = refusal({ NETWORK_TYPE: 'othernet' });
     expect(err.reasons).toHaveLength(5);
     expect(err.message).toContain('network configuration refused');
+  });
+});
+
+describe('verifyHorizonNetwork: the live half of the boot assertion (fix round of 18 October)', () => {
+  const facts = networkFacts(OTHER);
+  const refused = async (route: Parameters<typeof fakeFetch>[0]) => {
+    const { fetchImpl } = fakeFetch(route);
+    try { await verifyHorizonNetwork(facts, { fetch: fetchImpl }); } catch (e) { expect(e).toBeInstanceOf(NetworkConfigError); return (e as NetworkConfigError).reasons.join(' '); }
+    throw new Error('expected a refusal');
+  };
+
+  it('asks the Horizon root for JSON and passes when network_passphrase equals NETWORK_PASSPHRASE', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { network_passphrase: OTHER.NETWORK_PASSPHRASE, horizon_version: 'x' } }));
+    await expect(verifyHorizonNetwork(facts, { fetch: fetchImpl })).resolves.toBe(OTHER.NETWORK_PASSPHRASE);
+    expect(calls[0]?.url).toBe('https://horizon.example.test/');
+    expect(calls[0]?.headers.Accept).toBe('application/json');
+    const { fetchImpl: f2, calls: c2 } = fakeFetch(() => ({ status: 200, body: { network_passphrase: OTHER.NETWORK_PASSPHRASE } }));
+    await verifyHorizonNetwork({ ...facts, horizonUrl: 'https://horizon.example.test//' }, { fetch: f2 });
+    expect(c2[0]?.url).toBe('https://horizon.example.test/');
+  });
+
+  it('refuses when Horizon serves another passphrase, naming both variables and quoting neither value', async () => {
+    const msg = await refused(() => ({ status: 200, body: { network_passphrase: TESTNET_NETWORK_PASSPHRASE } }));
+    expect(msg).toContain('HORIZON_URL serves a different network than NETWORK_PASSPHRASE names');
+    expect(msg).not.toContain(TESTNET_NETWORK_PASSPHRASE);
+    expect(msg).not.toContain(OTHER.NETWORK_PASSPHRASE);
+  });
+
+  it('the testnet constants pass against a root reporting the testnet passphrase; a testnet mirror under another name passes the string check and is caught here', async () => {
+    const { fetchImpl } = fakeFetch(() => ({ status: 200, body: { network_passphrase: TESTNET_NETWORK_PASSPHRASE } }));
+    await expect(verifyHorizonNetwork(TESTNET_FACTS, { fetch: fetchImpl })).resolves.toBe(TESTNET_NETWORK_PASSPHRASE);
+    const mirrorEnv = { ...OTHER, HORIZON_URL: 'https://Horizon-Testnet.stellar.org/' };
+    expect(() => assertNetwork(mirrorEnv)).not.toThrow();
+    const { fetchImpl: f2 } = fakeFetch(() => ({ status: 200, body: { network_passphrase: TESTNET_NETWORK_PASSPHRASE } }));
+    await expect(verifyHorizonNetwork(networkFacts(mirrorEnv), { fetch: f2 })).rejects.toBeInstanceOf(NetworkConfigError);
+  });
+
+  it('fails closed on a non-200, a missing field, a non-JSON body and a transport failure', async () => {
+    expect(await refused(() => ({ status: 503 }))).toContain('answered HTTP 503');
+    expect(await refused(() => ({ status: 200, body: { horizon_version: 'x' } }))).toContain('carries no network_passphrase field');
+    const notJson = async () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    await expect(verifyHorizonNetwork(facts, { fetch: notJson })).rejects.toThrow(/did not answer with a JSON document/);
+    const boom = async () => { throw Object.assign(new Error('ECONNREFUSED'), { name: 'TypeError' }); };
+    await expect(verifyHorizonNetwork(facts, { fetch: boom })).rejects.toThrow(/did not answer \(TypeError\)/);
   });
 });
