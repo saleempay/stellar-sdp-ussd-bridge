@@ -26,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes, randomInt, generateKeyPairSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { NetworkConfigError, assertNetwork, explorerAccountUrl, explorerTxUrl } from '../dist/index.js';
+import { NetworkConfigError, assertNetwork, explorerAccountUrl, explorerTxUrl, postgresVolumeName as volumeNameFor } from '../dist/index.js';
 
 const ENV_PATH = 'sdp/.env';
 const TEMPLATE_PATH = 'sdp/.env.example';
@@ -41,17 +41,17 @@ if (existsSync(ENV_PATH) && !force) {
 
 /**
  * The Compose volume name, as sdp/docker-compose.yml builds it:
- * ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-testnet. The project name
- * is read from the existing sdp/.env, then the environment, then the default.
+ * ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-${NETWORK_TYPE:-testnet}.
+ * Project name and network type are read from the existing sdp/.env, then
+ * the environment, then the defaults (src/sdp/env.ts, postgresVolumeName).
  */
 function postgresVolumeName() {
-  let fromEnvFile;
-  if (existsSync(ENV_PATH)) {
-    const m = /^COMPOSE_PROJECT_NAME=(.*)$/m.exec(readFileSync(ENV_PATH, 'utf8'));
-    if (m) fromEnvFile = m[1].trim().replace(/^["']|["']$/g, '');
-  }
-  const project = fromEnvFile || process.env.COMPOSE_PROJECT_NAME || 'sdp-bridge';
-  return `${project}_postgres-db-testnet`;
+  const fromFile = (key) => {
+    if (!existsSync(ENV_PATH)) return undefined;
+    const m = new RegExp(`^${key}=(.*)$`, 'm').exec(readFileSync(ENV_PATH, 'utf8'));
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined;
+  };
+  return volumeNameFor(fromFile('COMPOSE_PROJECT_NAME') || process.env.COMPOSE_PROJECT_NAME, fromFile('NETWORK_TYPE') || process.env.NETWORK_TYPE);
 }
 
 if (force) {

@@ -145,4 +145,6 @@ services:
 
 volumes:
   postgres-db:
-    name: ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-testnet
+    # The network type is part of the name: sdp/.env switched to another
+    # network never reuses the testnet database (src/sdp/env.ts, postgresVolumeName).
+    name: ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-${NETWORK_TYPE:-testnet}

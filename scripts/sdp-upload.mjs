@@ -12,9 +12,10 @@
  * unless --accept-partial is passed, and refused as well when the sidecar
  * does not describe this file's bytes.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { NetworkConfigError, SdpTenantClient, loadEnvFile, partialSidecarPath, promptMfaCode, readPartialSidecar, sdpConfigFromEnv, sha256Hex, uploadDisbursementFile, verifyHorizonNetwork } from '../dist/index.js';
+import { parseEnv } from 'node:util';
+import { NetworkConfigError, SdpTenantClient, assertSameNetwork, loadEnvFile, partialSidecarPath, promptMfaCode, readPartialSidecar, sdpConfigFromEnv, sha256Hex, uploadDisbursementFile, verifyHorizonNetwork } from '../dist/index.js';
 
 const args = process.argv.slice(2);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
@@ -34,7 +35,17 @@ if (sidecar) {
   console.log(`${what}. Uploading anyway (--accept-partial).`);
 }
 
-const cfg = sdpConfigFromEnv(loadEnvFile('sdp/.env'));
+const sdpEnv = loadEnvFile('sdp/.env');
+const cfg = sdpConfigFromEnv(sdpEnv);
+// The file being uploaded was written by provision from .env; both files must name the same network.
+if (existsSync('.env')) {
+  try { assertSameNetwork({ label: 'sdp/.env', env: sdpEnv }, { label: '.env', env: parseEnv(readFileSync('.env', 'utf8')) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+} else if (cfg.network.networkType !== 'testnet') {
+  console.error(`.env not found: an upload on network type "${cfg.network.networkType}" needs both files so their network values can be compared`);
+  process.exit(2);
+} else {
+  console.log('.env not present; network comparison with the bridge skipped (testnet)');
+}
 try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
 const tenant = cfg.tenants[0];
 const anon = new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: tenant.name, strictMfa: cfg.strictMfa });

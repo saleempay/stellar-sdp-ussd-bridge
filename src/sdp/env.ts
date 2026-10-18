@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import type { ReadinessConfig, TenantSpec } from './readiness.js';
 import { NetworkConfigError, TESTNET_NETWORK_TYPE, assertNetwork, type NetworkFacts } from './network.js';
+import { TESTNET_RPC_URL } from './facts.js';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -51,6 +52,38 @@ export interface SdpEnvConfig {
    * from the same log, so the readiness step refuses that path.
    */
   resetThroughLog: boolean;
+  /** Soroban RPC the SDP is pointed at (RPC_URL), after the network check. */
+  rpcUrl: string;
+}
+
+/**
+ * RPC_URL is an SDP network value too (sdp/docker-compose.yml passes it to
+ * both SDP services with the testnet RPC as the compose default). Testnet:
+ * when set it must equal the testnet RPC. Any other network: it must be set
+ * and must not be the testnet RPC, so a forgotten value cannot fall back to
+ * the testnet default (fix round of 18 October 2026).
+ */
+export function assertRpcForNetwork(env: EnvMap, network: NetworkFacts): string {
+  const rpc = (env.RPC_URL ?? '').trim();
+  if (network.networkType === TESTNET_NETWORK_TYPE) {
+    if (rpc !== '' && rpc !== TESTNET_RPC_URL) throw new NetworkConfigError(['RPC_URL does not equal the testnet value']);
+    return TESTNET_RPC_URL;
+  }
+  if (rpc === '') throw new NetworkConfigError([`RPC_URL is not set (required for network type "${network.networkType}"; the compose default is the testnet RPC)`]);
+  if (rpc === TESTNET_RPC_URL) throw new NetworkConfigError([`RPC_URL equals the testnet value, which cannot belong to network type "${network.networkType}"`]);
+  return rpc;
+}
+
+/**
+ * The Compose volume that holds the SDP database, as sdp/docker-compose.yml
+ * names it: <project>_postgres-db-<network type>. The network type is part
+ * of the name so that switching sdp/.env to another network can never bring
+ * the stack up on the testnet database (fix round of 18 October 2026).
+ */
+export function postgresVolumeName(project: string | undefined, networkType: string | undefined): string {
+  const p = (project ?? '').trim() || 'sdp-bridge';
+  const n = (networkType ?? '').trim().toLowerCase() || TESTNET_NETWORK_TYPE;
+  return `${p}_postgres-db-${n}`;
 }
 
 /** The dry run sender writes every message to the container log (internal/message/dry_run_client.go:17-21 at 7.0.0). */
@@ -90,9 +123,11 @@ export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
   const adminPort = env.ADMIN_PORT ?? '8003';
   const network = assertNetwork(env);
   assertSenderForNetwork(env, network);
+  const rpcUrl = assertRpcForNetwork(env, network);
   const testnet = network.networkType === TESTNET_NETWORK_TYPE;
   return {
     network,
+    rpcUrl,
     strictMfa: !testnet,
     resetThroughLog: testnet,
     apiUrl: env.SDP_API_URL ?? `http://localhost:${port}`,

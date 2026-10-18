@@ -157,7 +157,7 @@ sensitive as `sdp/.env`: do not paste it anywhere.
 To start again from nothing: `--reset`, then `npm run sdp:accounts --
 --force` (new accounts; the old ones stay funded on testnet and are
 abandoned), then `npm run sdp:up`. `sdp:accounts -- --force` refuses to
-run while the volume `${COMPOSE_PROJECT_NAME}_postgres-db-testnet` still
+run while the volume `${COMPOSE_PROJECT_NAME}_postgres-db-${NETWORK_TYPE}` still
 exists and names the `--reset` step in its message.
 
 ## 6. Troubleshooting
@@ -252,7 +252,17 @@ that uses Horizon (`provision`, `sdp:up`/`sdp:check`, `sdp:upload`,
 `sdp:batch`, the USSD capture service) reads the Horizon root document
 and refuses unless its `network_passphrase` equals `NETWORK_PASSPHRASE`.
 This runs on every network, testnet included, and fails closed when
-Horizon does not answer. Readiness step 8 (`usdc asset`) checks the configured issuer, the
+Horizon does not answer.
+
+Three more checks from the same fix round: `RPC_URL` in `sdp/.env` is
+asserted like the other SDP values (testnet: the testnet RPC when set;
+any other network: set and not the testnet RPC, so the compose default
+cannot be used by omission); `provision` and `sdp:upload` compare `.env`
+with `sdp/.env` (`assertSameNetwork`: type, passphrase, Horizon and
+issuer must match; off testnet both files are required, on testnet a
+missing one is noted); and the Postgres volume is named
+`<project>_postgres-db-<network type>`, so `sdp/.env` switched to another
+network never brings the stack up on the testnet database. Readiness step 8 (`usdc asset`) checks the configured issuer, the
 upload uses it to pick the asset, and explorer links are built from
 `EXPLORER_BASE_URL`.
 

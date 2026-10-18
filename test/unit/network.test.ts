@@ -12,6 +12,7 @@ import {
   networkFacts,
   networkTypeOf,
   verifyHorizonNetwork,
+  assertSameNetwork,
 } from '../../src/sdp/network.js';
 
 /** Made-up values for a network that is not testnet; nothing here names a real network. */
@@ -196,5 +197,23 @@ describe('verifyHorizonNetwork: the live half of the boot assertion (fix round o
     await expect(verifyHorizonNetwork(facts, { fetch: notJson })).rejects.toThrow(/did not answer with a JSON document/);
     const boom = async () => { throw Object.assign(new Error('ECONNREFUSED'), { name: 'TypeError' }); };
     await expect(verifyHorizonNetwork(facts, { fetch: boom })).rejects.toThrow(/did not answer \(TypeError\)/);
+  });
+});
+
+describe('assertSameNetwork: .env and sdp/.env must name the same network (fix round of 18 October)', () => {
+  it('passes when both name testnet (one explicitly, one by default) and when both name the same other network', () => {
+    expect(assertSameNetwork({ label: '.env', env: {} }, { label: 'sdp/.env', env: { NETWORK_TYPE: 'testnet' } }).networkType).toBe('testnet');
+    expect(assertSameNetwork({ label: '.env', env: OTHER }, { label: 'sdp/.env', env: { ...OTHER, EXPLORER_BASE_URL: 'https://another-explorer.example.test' } }).networkType).toBe('othernet');
+  });
+
+  it('refuses when the type, the passphrase, the Horizon or the issuer differ, naming the variable and both files, never a value', () => {
+    const err = (() => { try { assertSameNetwork({ label: '.env', env: {} }, { label: 'sdp/.env', env: OTHER }); } catch (e) { return e as NetworkConfigError; } throw new Error('expected a refusal'); })();
+    expect(err).toBeInstanceOf(NetworkConfigError);
+    const text = err.reasons.join(' ');
+    for (const v of ['NETWORK_TYPE', 'NETWORK_PASSPHRASE', 'HORIZON_URL', 'ASSET_ISSUER']) expect(text).toContain(`${v} differs between .env and sdp/.env`);
+    expect(text).not.toContain('EXPLORER_BASE_URL');
+    expect(text).not.toContain(OTHER.NETWORK_PASSPHRASE);
+    const one = (() => { try { assertSameNetwork({ label: '.env', env: OTHER }, { label: 'sdp/.env', env: { ...OTHER, HORIZON_URL: 'https://horizon-b.example.test' } }); } catch (e) { return e as NetworkConfigError; } return undefined; })();
+    expect(one?.reasons).toEqual(['HORIZON_URL differs between .env and sdp/.env']);
   });
 });

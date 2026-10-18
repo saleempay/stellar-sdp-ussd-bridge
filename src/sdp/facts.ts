@@ -56,6 +56,8 @@ export const USER_MANAGED_WALLET_NAME = 'User Managed Wallet';
 /** Stellar testnet identifiers, as in dev/.env.example at tag 7.0.0. */
 export const TESTNET_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 export const TESTNET_HORIZON_URL = 'https://horizon-testnet.stellar.org';
+/** Testnet Soroban RPC the SDP is pointed at (RPC_URL), as in dev/docker-compose-sdp.yml at tag 7.0.0. */
+export const TESTNET_RPC_URL = 'https://soroban-testnet.stellar.org';
 /**
  * Testnet explorer base the SDP dashboard itself links to. Source:
  * helmchart/sdp/templates/01.4-configmap-dashboard.yaml at tag 7.0.0

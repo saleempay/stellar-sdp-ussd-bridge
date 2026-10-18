@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, dashboardUrlFor, readinessConfigFor, sdpConfigFromEnv } from '../../src/sdp/env.js';
+import { ConfigError, dashboardUrlFor, postgresVolumeName, readinessConfigFor, sdpConfigFromEnv } from '../../src/sdp/env.js';
+import { TESTNET_RPC_URL } from '../../src/sdp/facts.js';
 import { NetworkConfigError } from '../../src/sdp/network.js';
 
 /** Made-up values for a network that is not testnet; nothing here names a real network. */
@@ -68,9 +69,33 @@ describe('sdpConfigFromEnv: the email sender off testnet (fix round of 18 Octobe
   });
 
   it('another network with a real sender passes, in strict MFA mode and with the log reset path off', () => {
-    const cfg = sdpConfigFromEnv({ ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL' });
+    const cfg = sdpConfigFromEnv({ ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL', RPC_URL: 'https://rpc.example.test' });
     expect(cfg.strictMfa).toBe(true);
     expect(cfg.resetThroughLog).toBe(false);
     expect(readinessConfigFor(cfg, cfg.tenants[0]!).resetThroughLog).toBe(false);
+  });
+});
+
+describe('sdpConfigFromEnv: RPC_URL is a network value too (fix round of 18 October)', () => {
+  const other = { ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL' };
+
+  it('testnet: unset takes the testnet RPC, the testnet value passes, anything else is refused', () => {
+    expect(sdpConfigFromEnv(full).rpcUrl).toBe(TESTNET_RPC_URL);
+    expect(sdpConfigFromEnv({ ...full, RPC_URL: TESTNET_RPC_URL }).rpcUrl).toBe(TESTNET_RPC_URL);
+    expect(refusal({ ...full, RPC_URL: 'https://rpc.example.test' }).reasons).toEqual(['RPC_URL does not equal the testnet value']);
+  });
+
+  it('another network: unset is refused (the compose default would be the testnet RPC), the testnet RPC is refused, another value passes', () => {
+    expect(refusal(other).reasons.join(' ')).toContain('RPC_URL is not set');
+    expect(refusal({ ...other, RPC_URL: TESTNET_RPC_URL }).reasons.join(' ')).toContain('RPC_URL equals the testnet value');
+    expect(sdpConfigFromEnv({ ...other, RPC_URL: 'https://rpc.example.test' }).rpcUrl).toBe('https://rpc.example.test');
+  });
+});
+
+describe('postgresVolumeName: the network type is part of the volume name (fix round of 18 October)', () => {
+  it('matches the compose expression with its defaults and with values set', () => {
+    expect(postgresVolumeName(undefined, undefined)).toBe('sdp-bridge_postgres-db-testnet');
+    expect(postgresVolumeName('', '')).toBe('sdp-bridge_postgres-db-testnet');
+    expect(postgresVolumeName('proj', 'OtherNet')).toBe('proj_postgres-db-othernet');
   });
 });

@@ -176,3 +176,29 @@ export async function verifyHorizonNetwork(facts: NetworkFacts, opts: HorizonChe
   }
   return reported;
 }
+
+/** One environment file, named for the refusal message. */
+export interface NamedEnv {
+  label: string;
+  env: EnvLike;
+}
+
+/**
+ * The bridge's .env and the SDP's sdp/.env are asserted separately; this
+ * checks that they name the same network (type, passphrase, Horizon,
+ * issuer), so recipients cannot be provisioned on one network while the
+ * SDP pays on another (fix round of 18 October 2026). Throws
+ * NetworkConfigError naming the variable and both files; values are not
+ * echoed. Returns the facts of the first file.
+ */
+export function assertSameNetwork(first: NamedEnv, second: NamedEnv): NetworkFacts {
+  const a = networkFacts(first.env);
+  const b = networkFacts(second.env);
+  const reasons: string[] = [];
+  for (const k of FACT_KEYS) {
+    if (k === 'explorerBaseUrl') continue; // a display choice, not a network identity
+    if (a[k] !== b[k]) reasons.push(`${NETWORK_ENV[k]} differs between ${first.label} and ${second.label}`);
+  }
+  if (reasons.length) throw new NetworkConfigError(reasons);
+  return a;
+}
