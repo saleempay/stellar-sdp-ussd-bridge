@@ -6,6 +6,10 @@
  *   npm run sdp:batch -- --disbursement <id> [--check-only] [--skip-start] [--timeout-minutes 10] [--second-run "<reason>"]
  *
  * Before anything starts (L3, rulings of 10 October 2026):
+ * - no payment of the disbursement may be above MAX_PAYMENT_USDC and its
+ *   total may not be above MAX_BATCH_USDC, whatever path produced it (the
+ *   input-file caps in provision do not see a hand-edited or partial file,
+ *   a re-upload or a dashboard disbursement); refuses, in --check-only too;
  * - the distribution account's USDC balance must not exceed MAX_ACCOUNT_USDC
  *   (default 100); an over-funded account refuses, in --check-only too;
  * - a disbursement in STARTED refuses, no flag lifts it; a disbursement in
@@ -35,6 +39,7 @@ import {
   USDC_CODE,
   accountCeilingReason,
   capsFromEnv,
+  disbursementCapReasons,
   formatBatchReport,
   guardBatchStart,
   loadEnvFile,
@@ -82,13 +87,17 @@ const usdc = onChain.balances.find((b) => b.asset_code === asset.code && b.asset
 console.log(`network ${cfg.network.networkType}, tenant ${tenant.name}, distribution account ${maskAccount(account.distribution_account_address)} (${account.name}), USDC balance ${usdc}, ceiling ${caps.maxAccountUsdc}`);
 console.log(`disbursement ${d.id} "${d.name}": status ${d.status}, ${payments.length} payments, total ${total} USDC`);
 
+// Caps on the disbursement itself: the per-payment and per-batch caps hold
+// whatever path produced it (review of 13 October, finding 1).
+const capReasons = disbursementCapReasons(payments, caps);
+if (capReasons.length) { console.error(`refused: ${capReasons.join('; ')}`); process.exit(3); }
 // Cap: an over-funded distribution account refuses, before any start.
 const ceiling = accountCeilingReason(usdc, caps);
 if (ceiling) { console.error(`refused: ${ceiling}`); process.exit(3); }
 
 if (checkOnly) {
   console.log(Number(usdc) >= Number(total) ? 'balance covers the total' : 'balance does NOT cover the total');
-  console.log(`balance within the ${caps.maxAccountUsdc} USDC ceiling`);
+  console.log(`balance within the ${caps.maxAccountUsdc} USDC ceiling; every payment within ${caps.maxPaymentUsdc} USDC and the total within ${caps.maxBatchUsdc} USDC`);
   try {
     const seen = await guardBatchStart({ client, walletId, disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
     const pausedNote = seen.pausedAllowed.length

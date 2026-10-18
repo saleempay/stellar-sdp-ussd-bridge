@@ -9,6 +9,7 @@ import {
   fromStroops,
   sumAmounts,
   toStroops,
+  disbursementCapReasons,
 } from '../../src/sdp/caps.js';
 
 describe('caps: string arithmetic', () => {
@@ -62,5 +63,31 @@ describe('accountCeilingReason', () => {
     expect(reason).toContain('100.0000001 USDC');
     expect(reason).toContain('MAX_ACCOUNT_USDC ceiling of 100 USDC');
     expect(accountCeilingReason('12.5', { maxAccountUsdc: '12.4999999' })).toContain('ceiling of 12.4999999');
+  });
+});
+
+describe('disbursementCapReasons: the caps hold on the disbursement about to start (review of 13 October, finding 1)', () => {
+  const caps = { maxPaymentUsdc: '5', maxBatchUsdc: '25' };
+  // rows that never went through parseInputCsv: a hand-edited file, a re-upload, a dashboard disbursement
+  const rows = (...amounts: string[]) => amounts.map((amount, i) => ({ id: `p${i}`, amount }));
+
+  it('passes a disbursement within both caps, at the exact boundary too', () => {
+    expect(disbursementCapReasons(rows('5.0000000', '5', '5.0000000', '5', '5'), caps)).toEqual([]);
+    expect(disbursementCapReasons([], caps)).toEqual([]);
+  });
+
+  it('refuses a payment above the per-payment cap by one stroop, counting the rows above and naming the largest', () => {
+    const reasons = disbursementCapReasons(rows('1', '5.0000001', '7.5'), caps);
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toContain('2 of 3 payment(s) in the disbursement are above the MAX_PAYMENT_USDC cap of 5 USDC (largest 7.5 USDC)');
+  });
+
+  it('refuses a total above the per-batch cap even when every payment is within the per-payment cap', () => {
+    const reasons = disbursementCapReasons(rows('5', '5', '5', '5', '5', '0.0000001'), caps);
+    expect(reasons).toEqual(["the disbursement's total of 25.0000001 USDC over 6 payment(s) is above the MAX_BATCH_USDC cap of 25 USDC"]);
+  });
+
+  it('reports both reasons together', () => {
+    expect(disbursementCapReasons(rows('30'), caps)).toHaveLength(2);
   });
 });
