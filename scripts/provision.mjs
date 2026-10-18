@@ -62,18 +62,11 @@ if (!input || !output) {
   process.exit(2);
 }
 
+// One environment for every check: .env overlaid by the process environment,
+// so the network assertion, the caps and the signer read the same values
+// (review of 13 October, pull request #10, finding 2).
 let env;
-try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.env not found; run npm run sponsor:setup first'); process.exit(2); }
-// The signer: the adapter's reference signer over SPONSOR_SECRET_KEY by
-// default, or one injected through BRIDGE_SIGNER_MODULE (checked against the
-// adapter's Signer interface; SPONSOR_PUBLIC_KEY names the sponsor).
-let signing;
-try {
-  signing = await sponsorSigning({ ...env, ...process.env }, await loadInjectedSigner({ ...env, ...process.env }));
-} catch (e) {
-  console.error(e instanceof SignerConfigError ? e.message : String(e));
-  process.exit(2);
-}
+try { env = { ...parseEnv(readFileSync('.env', 'utf8')), ...process.env }; } catch { console.error('.env not found; run npm run sponsor:setup first'); process.exit(2); }
 // Boot assertion: testnet values must be the testnet constants; any other
 // network needs every value supplied and BRIDGE_ACKNOWLEDGE_REAL_FUNDS=yes.
 let network;
@@ -97,7 +90,7 @@ const asset = { code: env.ASSET_CODE || USDC_CODE, issuer: network.assetIssuer }
 // Caps (MAX_PAYMENT_USDC, MAX_BATCH_USDC; defaults 5 and 25) are applied to
 // the file before anything is created or written.
 let caps;
-try { caps = capsFromEnv({ ...env, ...process.env }); } catch (e) { console.error(e instanceof CapConfigError ? e.message : String(e)); process.exit(2); }
+try { caps = capsFromEnv(env); } catch (e) { console.error(e instanceof CapConfigError ? e.message : String(e)); process.exit(2); }
 let rows;
 try {
   rows = parseInputCsv(readFileSync(input, 'utf8'), { allowPinColumn, caps });
@@ -106,6 +99,21 @@ try {
   process.exit(2);
 }
 
+// The signer comes last among the boot checks: the adapter's reference
+// signer over SPONSOR_SECRET_KEY by default, or one injected through
+// BRIDGE_SIGNER_MODULE (checked against the adapter's Signer interface;
+// SPONSOR_PUBLIC_KEY names the sponsor). A deployment's signer module is
+// the code that reaches out at import or construction (an HSM session, an
+// MPC service), so it is imported only after the network has been accepted,
+// the real-funds acknowledgement checked and the caps read (review of
+// 13 October, pull request #10, finding 2).
+let signing;
+try {
+  signing = await sponsorSigning(env, await loadInjectedSigner(env));
+} catch (e) {
+  console.error(e instanceof SignerConfigError ? e.message : String(e));
+  process.exit(2);
+}
 const { signer, sponsorPublicKey } = signing;
 mkdirSync(dataDir, { recursive: true });
 const deps = {

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Keypair } from '@stellar/stellar-sdk';
@@ -145,6 +145,7 @@ describe('scripts/provision.mjs refuses a bad injected signer at boot, before an
     writeFileSync(join(dir, 'in.csv'), 'phone,id,amount\n+254700000001,r1,1\n');
     mkdirSync(join(dir, 'fixtures'));
     copyFileSync(join(repo, 'test', 'fixtures', 'fake-signer.mjs'), join(dir, 'fixtures', 'fake-signer.mjs'));
+    copyFileSync(join(repo, 'test', 'fixtures', 'importing-signer.mjs'), join(dir, 'fixtures', 'importing-signer.mjs'));
     return dir;
   }
   const run = (dir: string, extraEnv: Record<string, string> = {}) =>
@@ -172,5 +173,30 @@ describe('scripts/provision.mjs refuses a bad injected signer at boot, before an
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('must not be set when a signer is injected');
     expect(r.stderr).not.toContain(SPONSOR.secret());
+  });
+
+  it('the signer module is imported only after the network has been accepted: a refused network leaves it never imported (review of 13 October, finding 2)', () => {
+    const dir = scratch([`SPONSOR_PUBLIC_KEY=${SPONSOR.publicKey()}`, 'BRIDGE_SIGNER_MODULE=./fixtures/importing-signer.mjs', 'NETWORK_TYPE=othernet']);
+    const r = run(dir, { FAKE_SIGNER_SPONSOR: SPONSOR.publicKey() });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('network configuration refused');
+    expect(r.stderr).toContain('BRIDGE_ACKNOWLEDGE_REAL_FUNDS');
+    expect(existsSync(join(dir, 'signer-module-imported.txt'))).toBe(false);
+  });
+
+  it('the network assertion reads the same merged environment as the signer: NETWORK_TYPE from the shell alone is honoured', () => {
+    const dir = scratch([`SPONSOR_PUBLIC_KEY=${SPONSOR.publicKey()}`, 'BRIDGE_SIGNER_MODULE=./fixtures/importing-signer.mjs']);
+    const r = run(dir, { FAKE_SIGNER_SPONSOR: SPONSOR.publicKey(), NETWORK_TYPE: 'othernet' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('network configuration refused');
+    expect(existsSync(join(dir, 'signer-module-imported.txt'))).toBe(false);
+  });
+
+  it('on an accepted network the signer module is imported and its checks still run before any network call', () => {
+    const dir = scratch([`SPONSOR_PUBLIC_KEY=${SPONSOR.publicKey()}`, 'BRIDGE_SIGNER_MODULE=./fixtures/importing-signer.mjs']);
+    const r = run(dir, { FAKE_SIGNER_SPONSOR: Keypair.random().publicKey() });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('cannot sign for the sponsor account');
+    expect(existsSync(join(dir, 'signer-module-imported.txt'))).toBe(true);
   });
 });

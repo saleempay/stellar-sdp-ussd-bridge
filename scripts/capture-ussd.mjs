@@ -47,14 +47,15 @@ const flag = (n) => args.includes(n);
 const waitMinutes = Number(opt('--wait-minutes') ?? 30);
 const externalUrl = (opt('--tunnel-url') ?? process.env.TUNNEL_BASE_URL ?? '').replace(/\/+$/, '');
 let env;
-try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.env not found'); process.exit(2); }
+// one environment for every check: .env overlaid by the process environment
+try { env = { ...parseEnv(readFileSync('.env', 'utf8')), ...process.env }; } catch { console.error('.env not found'); process.exit(2); }
 let cfg;
 try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfigError || e instanceof ClosingLineError) { console.error(e.message); process.exit(2); } throw e; }
 // Creation on dial signs with the adapter's reference signer by default, or
 // with a signer injected through BRIDGE_SIGNER_MODULE (checked at boot).
 if (cfg.createOnDial) {
   try {
-    const signing = await sponsorSigning({ ...env, ...process.env }, await loadInjectedSigner({ ...env, ...process.env }));
+    const signing = await sponsorSigning(env, await loadInjectedSigner(env));
     cfg = { ...cfg, signer: signing.signer, sponsorPublicKey: signing.sponsorPublicKey, sponsorSecretKey: undefined };
     console.log(`signer: ${signing.injected ? 'injected (BRIDGE_SIGNER_MODULE)' : 'adapter reference signer'}`);
   } catch (e) { if (e instanceof SignerConfigError) { console.error(e.message); process.exit(2); } throw e; }
