@@ -103,3 +103,26 @@ export function accountCeilingReason(balanceUsdc: string, caps: Pick<Caps, 'maxA
   if (compareAmounts(balanceUsdc, caps.maxAccountUsdc) <= 0) return null;
   return `the distribution account holds ${balanceUsdc} USDC, above the ${CAP_ENV.maxAccountUsdc} ceiling of ${caps.maxAccountUsdc} USDC; move the excess out before any batch`;
 }
+
+/**
+ * Why the disbursement about to be started refuses, or an empty list. The
+ * per-payment and per-batch caps are enforced on the input file by
+ * parseInputCsv, but the SDP pays from whatever disbursement it holds: a
+ * hand-edited or partial file through sdp:upload, a re-upload of an older
+ * file, or one made in the dashboard. So sdp:batch checks the payments it
+ * is about to start as well (review of 13 October 2026, finding 1), in
+ * exact stroops.
+ */
+export function disbursementCapReasons(payments: ReadonlyArray<{ amount: string }>, caps: Pick<Caps, 'maxPaymentUsdc' | 'maxBatchUsdc'>): string[] {
+  const reasons: string[] = [];
+  const above = payments.filter((p) => compareAmounts(p.amount, caps.maxPaymentUsdc) > 0);
+  if (above.length) {
+    const largest = above.map((p) => p.amount).reduce((a, b) => (compareAmounts(a, b) >= 0 ? a : b));
+    reasons.push(`${above.length} of ${payments.length} payment(s) in the disbursement are above the ${CAP_ENV.maxPaymentUsdc} cap of ${caps.maxPaymentUsdc} USDC (largest ${largest} USDC)`);
+  }
+  const total = sumAmounts(payments.map((p) => p.amount));
+  if (compareAmounts(total, caps.maxBatchUsdc) > 0) {
+    reasons.push(`the disbursement's total of ${total} USDC over ${payments.length} payment(s) is above the ${CAP_ENV.maxBatchUsdc} cap of ${caps.maxBatchUsdc} USDC`);
+  }
+  return reasons;
+}

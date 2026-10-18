@@ -343,8 +343,8 @@ at tag 7.0.0). The defaults are the same on every network.
 
 | Cap | Variable | Default | Where it bites |
 |---|---|---|---|
-| per payment | `MAX_PAYMENT_USDC` (`.env`) | 5 USDC | `npm run provision` refuses the whole input file when any row is above it, before any account is created or any file is written |
-| per batch | `MAX_BATCH_USDC` (`.env`) | 25 USDC | same, when the file's sum (string arithmetic on stroops) is above it |
+| per payment | `MAX_PAYMENT_USDC` (`.env`, and `sdp/.env` for `sdp:batch`) | 5 USDC | `npm run provision` refuses the whole input file when any row is above it, before any account is created or any file is written; `npm run sdp:batch` refuses the disbursement about to start when any of its payments is above it, whatever path produced the disbursement (a hand-edited or partial file, a re-upload, the dashboard), in `--check-only` too |
+| per batch | `MAX_BATCH_USDC` (`.env`, and `sdp/.env` for `sdp:batch`) | 25 USDC | same, when the file's sum (string arithmetic on stroops) is above it; and `sdp:batch` refuses when the disbursement's total is above it |
 | on the account | `MAX_ACCOUNT_USDC` (`sdp/.env`) | 100 USDC | `npm run sdp:batch` refuses, in `--check-only` too, when the distribution account holds more; move the excess out first |
 
 Two guards run before `sdp:batch` starts a disbursement (not with
