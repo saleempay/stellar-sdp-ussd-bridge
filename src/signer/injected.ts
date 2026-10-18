@@ -90,22 +90,46 @@ export interface SponsorSigning {
 }
 
 export interface SponsorSigningOptions {
+  /** Network the self-test envelope binds to; required when `selfTest` is true. */
+  networkPassphrase?: string;
   /**
-   * When given, an injected signer is made to sign a throwaway envelope for
-   * the sponsor (one ManageData operation, sequence 0, never submitted) and
-   * the signature is verified against SPONSOR_PUBLIC_KEY, so `canSignFor` is
+   * Make an injected signer sign a throwaway envelope for the sponsor and
+   * verify the signature against SPONSOR_PUBLIC_KEY, so `canSignFor` is
    * checked rather than reported (review of 13 October 2026, minor). The
+   * envelope carries sequence number 0 and a maxTime in the past, so no
+   * ledger can ever accept it. Ruling of 18 October 2026: behind
+   * BRIDGE_SIGNER_SELF_TEST (`selfTestEnabled`), default on for testnet and
+   * off for any other network; the run is logged, the signature never. The
    * reference signer needs no self-test: it derives the public key from the
    * secret it imports.
    */
-  networkPassphrase?: string;
+  selfTest?: boolean;
 }
 
-/** The self-test envelope: one operation, sequence 0, no time bounds; it can never be submitted. */
+/** `on` or `off`; unset means on for testnet and off for any other network. */
+export const SIGNER_SELF_TEST_ENV = 'BRIDGE_SIGNER_SELF_TEST';
+
+/** Whether the boot self-test runs for an injected signer, from the environment and the network type. */
+export function selfTestEnabled(env: EnvLike, networkType: string): boolean {
+  const raw = (env[SIGNER_SELF_TEST_ENV] ?? '').trim().toLowerCase();
+  if (raw === '') return networkType.trim().toLowerCase() === 'testnet';
+  if (raw === 'on') return true;
+  if (raw === 'off') return false;
+  throw new SignerConfigError(`${SIGNER_SELF_TEST_ENV} must be "on" or "off" (unset: on for testnet, off for any other network)`);
+}
+
+/** maxTime of the self-test envelope: one second after the epoch, so it expired long ago. */
+export const SELF_TEST_MAX_TIME = 1;
+
+/**
+ * The self-test envelope: one ManageData operation, sequence number 0 (the
+ * account is given sequence -1, which the builder increments to 0) and time
+ * bounds that ended at the epoch, so no ledger can ever accept it.
+ */
 export function selfTestEnvelope(sponsorPublicKey: string, networkPassphrase: string): string {
-  return new TransactionBuilder(new Account(sponsorPublicKey, '0'), { fee: BASE_FEE, networkPassphrase })
+  return new TransactionBuilder(new Account(sponsorPublicKey, '-1'), { fee: BASE_FEE, networkPassphrase })
     .addOperation(Operation.manageData({ name: 'bridge self-test', value: 'never submitted' }))
-    .setTimeout(0)
+    .setTimebounds(0, SELF_TEST_MAX_TIME)
     .build()
     .toXDR();
 }
@@ -137,7 +161,8 @@ export async function sponsorSigning(env: EnvLike, injected?: Signer, opts: Spon
     if (secretKey) throw new SignerConfigError('SPONSOR_SECRET_KEY must not be set when a signer is injected; the injected signer holds the sponsor key');
     if (!(await injected.canSignFor(publicKey))) throw new SignerConfigError(`the injected signer cannot sign for the sponsor account ${publicKey.slice(0, 4)}...${publicKey.slice(-4)}`);
     let selfTested = false;
-    if (opts.networkPassphrase) {
+    if (opts.selfTest) {
+      if (!opts.networkPassphrase) throw new SignerConfigError('the signer self-test needs the network passphrase');
       let signed: string;
       try {
         signed = await injected.signTransaction(selfTestEnvelope(publicKey, opts.networkPassphrase), { networkPassphrase: opts.networkPassphrase, accountId: publicKey });

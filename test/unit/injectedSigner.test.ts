@@ -14,6 +14,8 @@ import {
   sponsorSigning,
   envelopeSignedBy,
   selfTestEnvelope,
+  selfTestEnabled,
+  SELF_TEST_MAX_TIME,
 } from '../../src/signer/injected.js';
 import { createUssdServer, ussdConfigFromEnv } from '../../src/ussd/server.js';
 import { FakeSigner } from './provisionFakes.js';
@@ -111,7 +113,7 @@ describe('sponsorSigning', () => {
   });
 });
 
-describe('sponsorSigning self-test: the signature is checked, not reported (review of 13 October, minor)', () => {
+describe('sponsorSigning self-test: the signature is checked, not reported (review of 13 October, minor; ruling of 18 October)', () => {
   const PASSPHRASE = 'Test SDF Network ; September 2015';
   const signingWith = (kp: Keypair) => ({
     async createAccountKey() { return Keypair.random().publicKey(); },
@@ -119,33 +121,50 @@ describe('sponsorSigning self-test: the signature is checked, not reported (revi
     async signTransaction(xdr: string, opts: { networkPassphrase: string }) { const tx = TransactionBuilder.fromXDR(xdr, opts.networkPassphrase); tx.sign(kp); return tx.toXDR(); },
   });
   const env = { SPONSOR_PUBLIC_KEY: SPONSOR.publicKey() };
+  const on = { networkPassphrase: PASSPHRASE, selfTest: true };
 
-  it('passes when the injected signer signs the throwaway envelope with the sponsor key', async () => {
-    const r = await sponsorSigning(env, signingWith(SPONSOR), { networkPassphrase: PASSPHRASE });
+  it('passes when the injected signer signs the throwaway envelope with the sponsor key; the result carries no signature', async () => {
+    const r = await sponsorSigning(env, signingWith(SPONSOR), on);
     expect(r.injected).toBe(true);
     expect(r.selfTested).toBe(true);
+    expect(Object.keys(r).sort()).toEqual(['injected', 'selfTested', 'signer', 'sponsorPublicKey']);
   });
 
-  it('refuses a signer that claims the sponsor but signs with another key, and one that returns the envelope unsigned', async () => {
-    await expect(sponsorSigning(env, signingWith(Keypair.random()), { networkPassphrase: PASSPHRASE })).rejects.toThrow(/does not verify against SPONSOR_PUBLIC_KEY/);
+  it('refuses a signer that claims the sponsor but signs with another key, one that returns the envelope unsigned, and one that throws', async () => {
+    await expect(sponsorSigning(env, signingWith(Keypair.random()), on)).rejects.toThrow(/does not verify against SPONSOR_PUBLIC_KEY/);
     const unsigned = { ...signingWith(SPONSOR), async signTransaction(xdr: string) { return xdr; } };
-    await expect(sponsorSigning(env, unsigned, { networkPassphrase: PASSPHRASE })).rejects.toThrow(/does not verify against SPONSOR_PUBLIC_KEY/);
+    await expect(sponsorSigning(env, unsigned, on)).rejects.toThrow(/does not verify against SPONSOR_PUBLIC_KEY/);
     const throwing = { ...signingWith(SPONSOR), async signTransaction() { throw new Error('hsm offline'); } };
-    await expect(sponsorSigning(env, throwing, { networkPassphrase: PASSPHRASE })).rejects.toThrow(/failed to sign the self-test envelope: hsm offline/);
+    await expect(sponsorSigning(env, throwing, on)).rejects.toThrow(/failed to sign the self-test envelope: hsm offline/);
   });
 
-  it('without a passphrase the self-test is skipped (selfTested false), and the reference signer never self-tests', async () => {
-    const r = await sponsorSigning(env, signingWith(Keypair.random()));
+  it('off, the self-test is skipped and the signer is never asked to sign; the reference signer never self-tests', async () => {
+    let signCalls = 0;
+    const counting = { ...signingWith(Keypair.random()), async signTransaction(xdr: string) { signCalls += 1; return xdr; } };
+    const r = await sponsorSigning(env, counting, { networkPassphrase: PASSPHRASE, selfTest: false });
     expect(r.selfTested).toBe(false);
-    const ref = await sponsorSigning({ SPONSOR_SECRET_KEY: SPONSOR.secret() }, undefined, { networkPassphrase: PASSPHRASE });
+    expect(signCalls).toBe(0);
+    await expect(sponsorSigning(env, counting, { selfTest: true })).rejects.toThrow(/needs the network passphrase/);
+    const ref = await sponsorSigning({ SPONSOR_SECRET_KEY: SPONSOR.secret() }, undefined, on);
     expect(ref.injected).toBe(false);
     expect(ref.selfTested).toBe(false);
   });
 
-  it('the envelope can never be submitted: sequence 0, one ManageData operation; envelopeSignedBy needs a signature over the hash by that key', () => {
+  it('BRIDGE_SIGNER_SELF_TEST: unset is on for testnet and off for any other network; on and off are explicit; anything else is refused', () => {
+    expect(selfTestEnabled({}, 'testnet')).toBe(true);
+    expect(selfTestEnabled({}, ' TestNet ')).toBe(true);
+    expect(selfTestEnabled({}, 'othernet')).toBe(false);
+    expect(selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: 'on' }, 'othernet')).toBe(true);
+    expect(selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: ' OFF ' }, 'testnet')).toBe(false);
+    expect(() => selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: 'yes' }, 'testnet')).toThrow(SignerConfigError);
+  });
+
+  it('the envelope can never be submitted: sequence number 0, maxTime in the past, one ManageData operation; envelopeSignedBy needs a signature over the hash by that key', () => {
     const xdr = selfTestEnvelope(SPONSOR.publicKey(), PASSPHRASE);
     const tx = TransactionBuilder.fromXDR(xdr, PASSPHRASE);
-    expect('sequence' in tx ? tx.sequence : '').toBe('1');
+    expect('sequence' in tx ? tx.sequence : '').toBe('0');
+    expect('timeBounds' in tx ? tx.timeBounds : undefined).toEqual({ minTime: '0', maxTime: String(SELF_TEST_MAX_TIME) });
+    expect(Number(SELF_TEST_MAX_TIME)).toBeLessThan(Date.now() / 1000);
     expect('operations' in tx ? tx.operations.map((o) => o.type) : []).toEqual(['manageData']);
     expect(envelopeSignedBy(xdr, SPONSOR.publicKey(), PASSPHRASE)).toBe(false);
   });

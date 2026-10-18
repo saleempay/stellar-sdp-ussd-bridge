@@ -37,7 +37,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import {
   ClosingLineError, NetworkConfigError, SignerConfigError, assessDialReadiness, captureBanner, createUssdServer, describeExchange,
-  loadInjectedSigner, normaliseHostname, parseQuickTunnelHostname, readinessReport, recordingListener, sponsorSigning, tunnelCommand,
+  loadInjectedSigner, normaliseHostname, parseQuickTunnelHostname, readinessReport, recordingListener, selfTestEnabled, sponsorSigning, tunnelCommand,
   tunnelConfigFromEnv, tunnelStartNotice, ussdConfigFromEnv, verifyHorizonNetwork,
 } from '../dist/index.js';
 
@@ -55,14 +55,17 @@ try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfig
 // with a signer injected through BRIDGE_SIGNER_MODULE (checked at boot).
 if (cfg.createOnDial) {
   try {
-    const signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase: cfg.network.networkPassphrase });
+    const selfTest = selfTestEnabled(env, cfg.network.networkType);
+    const signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase: cfg.network.networkPassphrase, selfTest });
     cfg = { ...cfg, signer: signing.signer, sponsorPublicKey: signing.sponsorPublicKey, sponsorSecretKey: undefined };
     console.log(`signer: ${signing.injected ? 'injected (BRIDGE_SIGNER_MODULE)' : 'adapter reference signer'}`);
+    if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : `signer self-test: skipped (${(env.BRIDGE_SIGNER_SELF_TEST ?? '').trim() ? 'BRIDGE_SIGNER_SELF_TEST=off' : `default off for network type "${cfg.network.networkType}"`})`);
   } catch (e) { if (e instanceof SignerConfigError) { console.error(e.message); process.exit(2); } throw e; }
 }
 if (!cfg.callbackPath) { console.error('USSD_CALLBACK_PATH is not set in .env (a long random segment, never printed)'); process.exit(2); }
 // Live half of the boot assertion: Horizon's root must report the configured passphrase.
-try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+// Ruling of 18 October 2026: when this fails, the readiness output names Horizon as the reason.
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(`NOT READY TO DIAL: Horizon check failed, the service does not start: ${e instanceof NetworkConfigError ? e.message : String(e)}`); process.exit(2); }
 let tunnelCfg;
 try { tunnelCfg = externalUrl ? { mode: 'external', hostname: normaliseHostname(externalUrl) } : tunnelConfigFromEnv(env); } catch (e) { console.error(e.message); process.exit(2); }
 

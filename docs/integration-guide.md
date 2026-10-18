@@ -348,8 +348,13 @@ boot `npm run provision` and the USSD service import it and refuse, with
 exit code 2 and the missing member named, anything that does not implement
 the interface. With an injected signer `SPONSOR_PUBLIC_KEY` names the
 sponsor, the signer must report it can sign for that account, and
-`SPONSOR_SECRET_KEY` must be empty. This repository adds no signer
-implementation; the tests use a fake.
+`SPONSOR_SECRET_KEY` must be empty. With `BRIDGE_SIGNER_SELF_TEST=on`
+(the default on testnet; off by default on any other network) the signer is
+also made to sign a throwaway envelope for the sponsor at boot, one
+ManageData operation with sequence number 0 and time bounds that ended at
+the epoch, so no ledger can accept it, and the signature is verified
+against `SPONSOR_PUBLIC_KEY`; the run is logged, the signature never. This
+repository adds no signer implementation; the tests use a fake.
 
 ### Caps and guards
 
