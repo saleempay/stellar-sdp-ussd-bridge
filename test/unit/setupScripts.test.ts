@@ -96,6 +96,23 @@ describe('setup-sponsor.mjs --no-fund', () => {
     expect(r.out).toContain('https://explorer.example.test/other/account/G');
     expect(r.out).toContain('network othernet');
   });
+
+  it('on another network without --no-fund the faucet is never called: funding is skipped with a note (review of 13 October, minor)', () => {
+    const dir = scratch();
+    const r = run('setup-sponsor.mjs', dir, [], {
+      NETWORK_TYPE: 'othernet',
+      NETWORK_PASSPHRASE: 'Other Network ; Example Only',
+      HORIZON_URL: 'https://horizon.example.test',
+      ASSET_ISSUER: 'G'.padEnd(56, 'A'),
+      EXPLORER_BASE_URL: 'https://explorer.example.test/other',
+      BRIDGE_ACKNOWLEDGE_REAL_FUNDS: 'yes',
+    });
+    expect(r.status, r.err).toBe(0);
+    expect(r.out).toContain('Friendbot is testnet only');
+    expect(r.out).toContain('https://explorer.example.test/other/account/G');
+    expect(r.out).not.toContain('funded by Friendbot');
+    expect(JSON.parse(readFileSync(join(dir, 'test-output', 'sponsor-funding.json'), 'utf8')).funded).toBe(false);
+  });
 });
 
 describe('setup-sdp-accounts.mjs --no-fund', () => {
@@ -123,5 +140,21 @@ describe('setup-sdp-accounts.mjs --no-fund', () => {
     expect(r.status).toBe(2);
     expect(r.err).toContain('network configuration refused');
     expect(existsSync(join(dir, 'sdp', '.env'))).toBe(false);
+  });
+
+  it('on another network without --no-fund the faucet is never called: funding is skipped with a note (review of 13 October, minor)', () => {
+    const dir = scratch();
+    const r = run('setup-sdp-accounts.mjs', dir, [], { ...{
+      NETWORK_TYPE: 'othernet',
+      NETWORK_PASSPHRASE: 'Other Network ; Example Only',
+      HORIZON_URL: 'https://horizon.example.test',
+      ASSET_ISSUER: 'G'.padEnd(56, 'A'),
+      EXPLORER_BASE_URL: 'https://explorer.example.test/other',
+      BRIDGE_ACKNOWLEDGE_REAL_FUNDS: 'yes',
+    }, RPC_URL: 'https://rpc.example.test', EMAIL_SENDER_TYPE: 'AWS_EMAIL' });
+    expect(r.status, r.err).toBe(0);
+    expect(r.out).toContain('Friendbot is testnet only');
+    expect(r.out).not.toContain('funded by Friendbot');
+    expect(JSON.parse(readFileSync(join(dir, 'test-output', 'sdp-accounts-funding.json'), 'utf8')).funded).toBe(false);
   });
 });

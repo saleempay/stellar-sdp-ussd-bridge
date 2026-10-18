@@ -32,7 +32,7 @@ const ENV_PATH = 'sdp/.env';
 const TEMPLATE_PATH = 'sdp/.env.example';
 const FRIENDBOT_URL = process.env.FRIENDBOT_URL || 'https://friendbot.stellar.org';
 const force = process.argv.includes('--force');
-const noFund = process.argv.includes('--no-fund');
+const noFundFlag = process.argv.includes('--no-fund');
 
 if (existsSync(ENV_PATH) && !force) {
   console.error(`${ENV_PATH} already exists. Re-run with --force to replace it (the old accounts are abandoned).`);
@@ -143,9 +143,14 @@ const filled = template
   })
   .join('\n');
 
+// Friendbot exists on testnet only: off testnet the faucet is never asked,
+// whether or not --no-fund was passed (review of 13 October, minor).
+const noFund = noFundFlag || network.networkType !== 'testnet';
 let funding;
 if (noFund) {
-  console.log(`Generated keypairs for network ${network.networkType}. Host distribution account not funded (--no-fund).`);
+  console.log(noFundFlag
+    ? `Generated keypairs for network ${network.networkType}. Host distribution account not funded (--no-fund).`
+    : `Generated keypairs for network ${network.networkType}. Host distribution account not funded: Friendbot is testnet only, so funding is skipped on this network (fund by hand).`);
 } else {
   console.log(`Generated keypairs for network ${network.networkType}. Requesting Friendbot funding for the host distribution account...`);
   const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(distribution.publicKey())}`);

@@ -273,7 +273,9 @@ generate and write the env file exactly as before but call no faucet. Each
 prints the masked account and its explorer link from the configured
 network, so the account can be funded by hand and checked. The run record
 in `test-output/` carries `funded: false`. Friendbot exists on testnet
-only (developers.stellar.org/docs/networks, "Friendbot Available").
+only (developers.stellar.org/docs/networks, "Friendbot Available"), so on
+any other network the scripts skip the faucet whether or not `--no-fund`
+is passed, and say so (fix round of 18 October 2026).
 
 ### 9.3 Multi-factor login
 

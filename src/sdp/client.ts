@@ -325,9 +325,15 @@ export class SdpTenantClient {
     this.restrictedToMfaEnable = opts.restrictedToMfaEnable ?? false;
   }
 
-  /** The same client with a Bearer token attached (unrestricted; in strict mode prefer `authenticate`). */
-  withToken(token: string): SdpTenantClient {
-    return new SdpTenantClient({ ...this.opts, token, restrictedToMfaEnable: false });
+  /**
+   * The same client with a Bearer token attached. In strict mode the token
+   * is treated like one issued without a code (restricted to the single
+   * MFA-enabling call) unless the caller declares `codeUsed: true`, so a
+   * token string cannot bypass what `authenticate` enforces (review of
+   * 13 October, minor). Off strict mode the client is unrestricted.
+   */
+  withToken(token: string, opts: { codeUsed?: boolean } = {}): SdpTenantClient {
+    return new SdpTenantClient({ ...this.opts, token, restrictedToMfaEnable: this.strictMfa && !opts.codeUsed });
   }
 
   /**

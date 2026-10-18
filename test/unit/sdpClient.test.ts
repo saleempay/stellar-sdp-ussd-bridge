@@ -290,6 +290,21 @@ describe('SdpTenantClient strict MFA mode (any network other than testnet)', () 
     await expect(new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b')).rejects.toBeInstanceOf(MfaRequiredError);
   });
 
+  it('withToken in strict mode yields a restricted client unless the caller declares the code was used (review of 13 October, minor)', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: [] }));
+    const anon = new SdpTenantClient({ ...base, fetch: fetchImpl });
+    const restricted = anon.withToken('tok');
+    expect(restricted.restrictedToMfaEnable).toBe(true);
+    await expect(restricted.listAssets()).rejects.toBeInstanceOf(MfaRequiredError);
+    expect(calls).toHaveLength(0);
+    const verified = anon.withToken('tok', { codeUsed: true });
+    expect(verified.restrictedToMfaEnable).toBe(false);
+    await verified.listAssets();
+    expect(calls[0]?.headers.Authorization).toBe('Bearer tok');
+    // off strict mode nothing changes
+    expect(new SdpTenantClient({ ...base, strictMfa: false, fetch: fetchImpl }).withToken('tok').restrictedToMfaEnable).toBe(false);
+  });
+
   it('login with a code returns the token, and never asks the SDP to remember the device', async () => {
     const { fetchImpl, calls } = fakeFetch((r) => (r.url.endsWith('/login') ? { status: 200, body: { message: MFA_MESSAGE } } : { status: 200, body: { token: 'verified' } }));
     const token = await new SdpTenantClient({ ...base, fetch: fetchImpl }).login('a', 'b', { mfaCode: async () => '123456' });

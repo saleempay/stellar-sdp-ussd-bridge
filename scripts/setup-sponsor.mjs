@@ -24,7 +24,7 @@ const ENV_PATH = '.env';
 const TEMPLATE_PATH = '.env.example';
 const FRIENDBOT_URL = process.env.FRIENDBOT_URL || 'https://friendbot.stellar.org';
 const force = process.argv.includes('--force');
-const noFund = process.argv.includes('--no-fund');
+const noFundFlag = process.argv.includes('--no-fund');
 const mask = (a) => `${a.slice(0, 4)}...${a.slice(-4)}`;
 
 if (existsSync(ENV_PATH) && !force) {
@@ -41,10 +41,15 @@ try {
   process.exit(2);
 }
 
+// Friendbot exists on testnet only: off testnet the faucet is never asked,
+// whether or not --no-fund was passed (review of 13 October, minor).
+const noFund = noFundFlag || network.networkType !== 'testnet';
 const kp = Keypair.random();
 let funding;
 if (noFund) {
-  console.log(`Generated sponsor keypair for network ${network.networkType}. Not funded (--no-fund).`);
+  console.log(noFundFlag
+    ? `Generated sponsor keypair for network ${network.networkType}. Not funded (--no-fund).`
+    : `Generated sponsor keypair for network ${network.networkType}. Not funded: Friendbot is testnet only, so funding is skipped on this network (fund by hand).`);
 } else {
   console.log(`Generated sponsor keypair for network ${network.networkType}. Requesting Friendbot funding...`);
   const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(kp.publicKey())}`);
