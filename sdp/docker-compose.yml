@@ -43,7 +43,7 @@ services:
       - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
       - "127.0.0.1:${ADMIN_PORT:-8003}:${ADMIN_PORT:-8003}"
     environment:
-      ENVIRONMENT: localhost
+      ENVIRONMENT: ${ENVIRONMENT:-localhost}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       PORT: "${PORT:-8000}"
       METRICS_PORT: "${METRICS_PORT:-8002}"
@@ -55,12 +55,16 @@ services:
       NETWORK_PASSPHRASE: "${NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}"
       HORIZON_URL: ${HORIZON_URL:-https://horizon-testnet.stellar.org}
       RPC_URL: ${RPC_URL:-https://soroban-testnet.stellar.org}
-      EMAIL_SENDER_TYPE: DRY_RUN
-      SMS_SENDER_TYPE: DRY_RUN
+      # Message senders. DRY_RUN prints every message, MFA codes and reset
+      # links included, to this container's log; the bridge refuses any
+      # network other than testnet while the email sender is DRY_RUN
+      # (src/sdp/env.ts).
+      EMAIL_SENDER_TYPE: ${EMAIL_SENDER_TYPE:-DRY_RUN}
+      SMS_SENDER_TYPE: ${SMS_SENDER_TYPE:-DRY_RUN}
       SEP10_CLIENT_ATTRIBUTION_REQUIRED: "true"
       DISABLE_MFA: "${DISABLE_MFA:-true}"
-      DISABLE_RECAPTCHA: "true"
-      CORS_ALLOWED_ORIGINS: "*"
+      DISABLE_RECAPTCHA: "${DISABLE_RECAPTCHA:-true}"
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-*}"
       INSTANCE_NAME: "${INSTANCE_NAME:-SDP USSD bridge (testnet)}"
       SINGLE_TENANT_MODE: "false"
       TENANT_XLM_BOOTSTRAP_AMOUNT: ${TENANT_XLM_BOOTSTRAP_AMOUNT:-5}

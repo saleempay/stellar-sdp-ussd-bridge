@@ -302,6 +302,18 @@ The bridge handles this in two ways (L2 fix round, 10 October 2026):
   network it requires `mfa_disabled` to be `false`: when it is `true` (or
   absent) the step sets it to `false`, logs in again (the SDP now asks for
   the emailed code) and reads the value back.
+- The senders and the log (fix round of 18 October 2026). `EMAIL_SENDER_TYPE`,
+  `SMS_SENDER_TYPE`, `ENVIRONMENT`, `DISABLE_RECAPTCHA` and
+  `CORS_ALLOWED_ORIGINS` now come from `sdp/.env` with the former fixed
+  values as the testnet defaults. The dry run sender writes every message,
+  MFA codes and password reset links included, to the `sdp-api` log
+  (`internal/message/dry_run_client.go:17-21`), and the readiness step
+  `owner login` reads reset links from that log. On any other network both
+  are refused: the boot assertion refuses `EMAIL_SENDER_TYPE` unset or
+  `DRY_RUN` (`src/sdp/env.ts`, `assertSenderForNetwork`), and `owner login`
+  refuses the log-reading reset path, so the owner password is set through
+  a real channel (the SDP's own reset email) before the readiness run. On
+  testnet nothing changes.
 - Strict client mode on any other network (`strictMfa`, derived from
   `NETWORK_TYPE`): the client never asks the SDP to remember the device
   (`remember_me` is always `false`), and a token the SDP issued without a

@@ -59,6 +59,13 @@ export interface ReadinessConfig {
    * organisation's setting; on any other network it requires MFA on.
    */
   networkType?: string;
+  /**
+   * Whether the owner password may be set through the reset link read from
+   * the sdp-api log (the dry run sender). Default: true on testnet, false on
+   * any other network. When false, a failed owner login is a refusal: the
+   * operator sets the password through a real channel first.
+   */
+  resetThroughLog?: boolean;
   /** How long to wait for the two health endpoints. */
   healthTimeoutMs?: number;
   pollIntervalMs?: number;
@@ -130,6 +137,8 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   const interval = cfg.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const usdcIssuer = cfg.usdcIssuer ?? TESTNET_USDC_ISSUER;
   const spec = cfg.tenant;
+  const testnet = (cfg.networkType ?? 'testnet').toLowerCase() === 'testnet';
+  const resetThroughLog = cfg.resetThroughLog ?? testnet;
 
   const run = async <T>(step: string, fn: () => Promise<T>): Promise<T> => {
     try {
@@ -193,6 +202,10 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
   // POST /forgot-password (forgot_password_handler.go:38-41), read the
   // token from the dry run message, POST /reset-password
   // (reset_password_handler.go:25-28). Skipped when the login already works.
+  // The reset link comes from the sdp-api log, which the dry run sender
+  // writes; off testnet that log would also carry the MFA code, so the
+  // path is refused there and the operator sets the password through a
+  // real channel (fix round of 18 October 2026).
   const loggedIn = await run('owner login', async () => {
     try {
       const c = await unauthenticated.authenticate(spec.ownerEmail, spec.ownerPassword, { mfaCode: deps.mfaCode });
@@ -200,6 +213,9 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
       return c;
     } catch (cause) {
       if (!(cause instanceof SdpHttpError) || cause.status !== 401) throw cause;
+    }
+    if (!resetThroughLog) {
+      throw new Error(`${spec.ownerEmail} cannot log in with the held password, and setting it through the reset link in the sdp-api log is testnet only (network type "${cfg.networkType ?? 'testnet'}"): set the owner's password through a real channel (the SDP's own reset email), then run this again`);
     }
     const since = deps.now();
     await unauthenticated.forgotPassword(spec.ownerEmail);

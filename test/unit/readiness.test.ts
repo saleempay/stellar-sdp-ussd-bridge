@@ -232,7 +232,8 @@ describe('mfa setting step (L2 fix round)', () => {
   });
 
   it('other network, mfa_disabled already false: already, and the login needed the code', async () => {
-    const { deps, asked } = fakeSdp({ mfaDisabled: false, strictMfa: true });
+    const { deps, asked, state } = fakeSdp({ mfaDisabled: false, strictMfa: true });
+    state.passwords.set('owner@bridge.local', 'pw-never-printed'); // off testnet the password is set through a real channel first
     const results = await provisionTenant(other, deps);
     const step = results.find((r) => r.step === 'mfa setting')!;
     expect(step.outcome).toBe('already');
@@ -242,6 +243,7 @@ describe('mfa setting step (L2 fix round)', () => {
   for (const value of [true, null] as const) {
     it(`other network, mfa_disabled ${String(value)}: the restricted token turns MFA on, then a code is required and the value reads back false`, async () => {
       const { deps, state, asked, calls } = fakeSdp({ mfaDisabled: value, strictMfa: true });
+      state.passwords.set('owner@bridge.local', 'pw-never-printed'); // off testnet the password is set through a real channel first
       const results = await provisionTenant(other, deps);
       const step = results.find((r) => r.step === 'mfa setting')!;
       expect(step.outcome).toBe('done');
@@ -253,7 +255,7 @@ describe('mfa setting step (L2 fix round)', () => {
       expect(patches[0]).toBe(JSON.stringify({ mfa_disabled: false }));
       // every later step ran on the verified client
       expect(results.map((r) => `${r.step}:${r.outcome}`)).toEqual([
-        'api health:ok', 'admin health:ok', 'tenant exists:done', 'owner login:done', 'mfa setting:done',
+        'api health:ok', 'admin health:ok', 'tenant exists:done', 'owner login:already', 'mfa setting:done',
         'invitations disabled:done', 'user managed wallet:done', 'usdc asset:ok',
       ]);
       expect(state.mfaBodies.every((b) => b.remember_me === false)).toBe(true);
@@ -274,5 +276,35 @@ describe('mfa setting step (L2 fix round)', () => {
     await expect(c.patchOrganization({ mfa_disabled: false, name: 'x' })).rejects.toThrow(/refused/);
     await expect(c.patchOrganization({ mfa_disabled: false })).resolves.toBeUndefined();
     expect(state.mfaDisabled).toBe(false);
+  });
+});
+
+describe('owner login: the log reset path is testnet only (fix round of 18 October)', () => {
+  it('on another network a failed login is refused before /forgot-password, naming the real channel', async () => {
+    const { deps, calls } = fakeSdp({ mfaDisabled: false, strictMfa: true });
+    // the fake holds no password for the owner, so the login answers 401
+    const err = await provisionTenant({ ...cfg, networkType: 'othernet' }, deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ReadinessError);
+    expect((err as ReadinessError).step).toBe('owner login');
+    expect((err as ReadinessError).message).toContain('testnet only');
+    expect((err as ReadinessError).message).toContain('real channel');
+    expect(calls.some((c) => c.url.endsWith('/forgot-password'))).toBe(false);
+    expect(calls.some((c) => c.url.endsWith('/reset-password'))).toBe(false);
+  });
+
+  it('resetThroughLog false is honoured on testnet too, and true on another network only when set explicitly', async () => {
+    const refused = await provisionTenant({ ...cfg, resetThroughLog: false }, fakeSdp().deps).catch((e: unknown) => e);
+    expect((refused as ReadinessError).step).toBe('owner login');
+    const { deps, state } = fakeSdp({ mfaDisabled: false, strictMfa: true });
+    const results = await provisionTenant({ ...cfg, networkType: 'othernet', resetThroughLog: true }, deps);
+    expect(results.find((r) => r.step === 'owner login')?.outcome).toBe('done');
+    expect(state.passwords.get('owner@bridge.local')).toBe('pw-never-printed');
+  });
+
+  it('on testnet the reset path still runs (unchanged behaviour)', async () => {
+    const { deps, calls } = fakeSdp();
+    const results = await provisionTenant(cfg, deps);
+    expect(results.find((r) => r.step === 'owner login')?.outcome).toBe('done');
+    expect(calls.some((c) => c.url.endsWith('/forgot-password'))).toBe(true);
   });
 });

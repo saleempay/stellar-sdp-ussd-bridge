@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import type { ReadinessConfig, TenantSpec } from './readiness.js';
-import { assertNetwork, type NetworkFacts } from './network.js';
+import { NetworkConfigError, TESTNET_NETWORK_TYPE, assertNetwork, type NetworkFacts } from './network.js';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -44,6 +44,30 @@ export interface SdpEnvConfig {
   network: NetworkFacts;
   /** Strict MFA handling for the tenant client: on for any network other than testnet. */
   strictMfa: boolean;
+  /**
+   * The owner password may be set through the password reset link read from
+   * the sdp-api log (EMAIL_SENDER_TYPE=DRY_RUN prints it there). Testnet only:
+   * on any other network the reset link and the MFA code would both come
+   * from the same log, so the readiness step refuses that path.
+   */
+  resetThroughLog: boolean;
+}
+
+/** The dry run sender writes every message to the container log (internal/message/dry_run_client.go:17-21 at 7.0.0). */
+export const DRY_RUN_SENDER = 'DRY_RUN';
+
+/**
+ * Off testnet the email sender may not be DRY_RUN: the MFA code the strict
+ * client requires would otherwise land in the same log the password reset
+ * path reads, and the second factor would add nothing over the first. The
+ * variable must be set, so a forgotten value cannot fall back to the
+ * compose default (DRY_RUN).
+ */
+export function assertSenderForNetwork(env: EnvMap, network: NetworkFacts): void {
+  if (network.networkType === TESTNET_NETWORK_TYPE) return;
+  const sender = (env.EMAIL_SENDER_TYPE ?? '').trim();
+  if (sender === '') throw new NetworkConfigError([`EMAIL_SENDER_TYPE is not set (required for network type "${network.networkType}"; DRY_RUN, the compose default, writes MFA codes and reset links to the container log)`]);
+  if (sender.toUpperCase() === DRY_RUN_SENDER) throw new NetworkConfigError([`EMAIL_SENDER_TYPE is ${DRY_RUN_SENDER}, which is refused for network type "${network.networkType}": the dry run sender writes MFA codes and password reset links to the sdp-api log`]);
 }
 
 /**
@@ -65,9 +89,12 @@ export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
   const port = env.PORT ?? '8000';
   const adminPort = env.ADMIN_PORT ?? '8003';
   const network = assertNetwork(env);
+  assertSenderForNetwork(env, network);
+  const testnet = network.networkType === TESTNET_NETWORK_TYPE;
   return {
     network,
-    strictMfa: network.networkType !== 'testnet',
+    strictMfa: !testnet,
+    resetThroughLog: testnet,
     apiUrl: env.SDP_API_URL ?? `http://localhost:${port}`,
     adminUrl: env.SDP_ADMIN_URL ?? `http://localhost:${adminPort}`,
     uiOrigin: env.SDP_UI_BASE_URL ?? 'http://localhost:3000',
@@ -107,5 +134,6 @@ export function readinessConfigFor(cfg: SdpEnvConfig, tenant: TenantSpec): Readi
     tenant,
     usdcIssuer: cfg.network.assetIssuer,
     networkType: cfg.network.networkType,
+    resetThroughLog: cfg.resetThroughLog,
   };
 }
