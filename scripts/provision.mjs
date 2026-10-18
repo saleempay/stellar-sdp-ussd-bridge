@@ -38,6 +38,7 @@ import {
   assertSameNetwork,
   capsFromEnv,
   loadInjectedSigner,
+  selfTestEnabled,
   sponsorSigning,
   formatProvisionReport,
   maskAccount,
@@ -109,7 +110,9 @@ try {
 // 13 October, pull request #10, finding 2).
 let signing;
 try {
-  signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase });
+  const selfTest = selfTestEnabled(env, network.networkType);
+  signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase, selfTest });
+  if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : `signer self-test: skipped (${(env.BRIDGE_SIGNER_SELF_TEST ?? '').trim() ? 'BRIDGE_SIGNER_SELF_TEST=off' : `default off for network type "${network.networkType}"`})`);
 } catch (e) {
   console.error(e instanceof SignerConfigError ? e.message : String(e));
   process.exit(2);
