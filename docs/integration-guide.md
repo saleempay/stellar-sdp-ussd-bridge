@@ -389,6 +389,14 @@ Two guards run before `sdp:batch` starts a disbursement (not with
 
 A refusal prints every reason and exits with code 3.
 
+Every cap and guard above protects the `sdp:batch` path only. A
+disbursement started from the SDP dashboard or through its API bypasses
+the per-payment and per-batch caps, the STARTED and PAUSED guards and the
+run log. The one limit that holds whatever the path is how much the
+distribution account holds, so the operating rule for any run with real
+value is to fund the account per batch, up to that batch's total, rather
+than to rely on the ceiling.
+
 ## What is out of scope
 
 Mainnet; production signing or custody; a persistent signer (the
