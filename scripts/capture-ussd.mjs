@@ -55,7 +55,7 @@ try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfig
 // with a signer injected through BRIDGE_SIGNER_MODULE (checked at boot).
 if (cfg.createOnDial) {
   try {
-    const signing = await sponsorSigning(env, await loadInjectedSigner(env));
+    const signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase: cfg.network.networkPassphrase });
     cfg = { ...cfg, signer: signing.signer, sponsorPublicKey: signing.sponsorPublicKey, sponsorSecretKey: undefined };
     console.log(`signer: ${signing.injected ? 'injected (BRIDGE_SIGNER_MODULE)' : 'adapter reference signer'}`);
   } catch (e) { if (e instanceof SignerConfigError) { console.error(e.message); process.exit(2); } throw e; }

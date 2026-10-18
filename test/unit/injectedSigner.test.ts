@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Keypair } from '@stellar/stellar-sdk';
+import { Keypair, TransactionBuilder } from '@stellar/stellar-sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LocalKeypairSigner } from 'stellar-ussd-sep10-adapter';
 import {
@@ -12,6 +12,8 @@ import {
   assertSigner,
   loadInjectedSigner,
   sponsorSigning,
+  envelopeSignedBy,
+  selfTestEnvelope,
 } from '../../src/signer/injected.js';
 import { createUssdServer, ussdConfigFromEnv } from '../../src/ussd/server.js';
 import { FakeSigner } from './provisionFakes.js';
@@ -109,6 +111,46 @@ describe('sponsorSigning', () => {
   });
 });
 
+describe('sponsorSigning self-test: the signature is checked, not reported (review of 13 October, minor)', () => {
+  const PASSPHRASE = 'Test SDF Network ; September 2015';
+  const signingWith = (kp: Keypair) => ({
+    async createAccountKey() { return Keypair.random().publicKey(); },
+    async canSignFor(id: string) { return id === SPONSOR.publicKey(); },
+    async signTransaction(xdr: string, opts: { networkPassphrase: string }) { const tx = TransactionBuilder.fromXDR(xdr, opts.networkPassphrase); tx.sign(kp); return tx.toXDR(); },
+  });
+  const env = { SPONSOR_PUBLIC_KEY: SPONSOR.publicKey() };
+
+  it('passes when the injected signer signs the throwaway envelope with the sponsor key', async () => {
+    const r = await sponsorSigning(env, signingWith(SPONSOR), { networkPassphrase: PASSPHRASE });
+    expect(r.injected).toBe(true);
+    expect(r.selfTested).toBe(true);
+  });
+
+  it('refuses a signer that claims the sponsor but signs with another key, and one that returns the envelope unsigned', async () => {
+    await expect(sponsorSigning(env, signingWith(Keypair.random()), { networkPassphrase: PASSPHRASE })).rejects.toThrow(/does not verify against SPONSOR_PUBLIC_KEY/);
+    const unsigned = { ...signingWith(SPONSOR), async signTransaction(xdr: string) { return xdr; } };
+    await expect(sponsorSigning(env, unsigned, { networkPassphrase: PASSPHRASE })).rejects.toThrow(/does not verify against SPONSOR_PUBLIC_KEY/);
+    const throwing = { ...signingWith(SPONSOR), async signTransaction() { throw new Error('hsm offline'); } };
+    await expect(sponsorSigning(env, throwing, { networkPassphrase: PASSPHRASE })).rejects.toThrow(/failed to sign the self-test envelope: hsm offline/);
+  });
+
+  it('without a passphrase the self-test is skipped (selfTested false), and the reference signer never self-tests', async () => {
+    const r = await sponsorSigning(env, signingWith(Keypair.random()));
+    expect(r.selfTested).toBe(false);
+    const ref = await sponsorSigning({ SPONSOR_SECRET_KEY: SPONSOR.secret() }, undefined, { networkPassphrase: PASSPHRASE });
+    expect(ref.injected).toBe(false);
+    expect(ref.selfTested).toBe(false);
+  });
+
+  it('the envelope can never be submitted: sequence 0, one ManageData operation; envelopeSignedBy needs a signature over the hash by that key', () => {
+    const xdr = selfTestEnvelope(SPONSOR.publicKey(), PASSPHRASE);
+    const tx = TransactionBuilder.fromXDR(xdr, PASSPHRASE);
+    expect('sequence' in tx ? tx.sequence : '').toBe('1');
+    expect('operations' in tx ? tx.operations.map((o) => o.type) : []).toEqual(['manageData']);
+    expect(envelopeSignedBy(xdr, SPONSOR.publicKey(), PASSPHRASE)).toBe(false);
+  });
+});
+
 describe('createUssdServer with an injected signer', () => {
   const env = { USSD_CALLBACK_PATH: '/ussd/test-only-path', USSD_CREATE_ON_DIAL: 'true', SPONSOR_PUBLIC_KEY: SPONSOR.publicKey() };
 
@@ -142,7 +184,7 @@ describe('scripts/provision.mjs refuses a bad injected signer at boot, before an
     const dir = mkdtempSync(join(tmpdir(), 'bridge-signer-'));
     dirs.push(dir);
     writeFileSync(join(dir, '.env'), `${envLines.join('\n')}\n`);
-    writeFileSync(join(dir, 'in.csv'), 'phone,id,amount\n+254700000001,r1,1\n');
+    writeFileSync(join(dir, 'in.csv'), 'phone,id,amount\n+999700000001,r1,1\n');
     mkdirSync(join(dir, 'fixtures'));
     copyFileSync(join(repo, 'test', 'fixtures', 'fake-signer.mjs'), join(dir, 'fixtures', 'fake-signer.mjs'));
     copyFileSync(join(repo, 'test', 'fixtures', 'importing-signer.mjs'), join(dir, 'fixtures', 'importing-signer.mjs'));
