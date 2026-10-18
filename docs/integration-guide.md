@@ -365,8 +365,8 @@ at tag 7.0.0). The defaults are the same on every network.
 Two guards run before `sdp:batch` starts a disbursement (not with
 `--skip-start`, which only follows a batch already started):
 
-- no disbursement is in `STARTED` (`GET /disbursements?status=started,paused`);
-  no flag lifts this;
+- no disbursement is in `STARTED` (`GET /disbursements?status=started,paused`,
+  paged, on every distribution account of the tenant); no flag lifts this;
 - a disbursement in `PAUSED` refuses unless `--second-run "<reason>"` is
   given and none of its payments is `READY` or `PENDING`, the two states
   that reach the network without a further operator action (a `PAUSED`
@@ -376,10 +376,16 @@ Two guards run before `sdp:batch` starts a disbursement (not with
   (`internal/services/disbursement_management_service.go:326-359` at
   7.0.0), so the drain disbursement after a pause must be for the balance
   less the paused commitments; `--check-only` prints that total;
-- the run log (`BATCH_RUN_LOG`, default `data/batch-run-log.jsonl`, one
-  JSON object per line, appended at start and at finish) records no
-  completed batch for the current UTC day, unless the operator passes
-  `--second-run "<reason>"`; the reason is written to the run log.
+- no batch was started on the current UTC day, unless the operator passes
+  `--second-run "<reason>"`; the reason is written to the run log. Two
+  sources decide and either suffices: the run log (`BATCH_RUN_LOG`, default
+  `data/batch-run-log.jsonl`, one JSON object per line, appended at start
+  and at finish), where any `started` entry of the day counts, so a batch
+  that moved money and then failed, timed out or was interrupted still
+  counts; and the SDP itself, where any disbursement in `STARTED`, `PAUSED`
+  or `COMPLETED` whose `status_history` holds a `STARTED` entry dated today
+  counts (`internal/data/disbursements.go:27,59-63` at 7.0.0), whatever
+  machine or path started it. The local log is the record of reasons.
 
 A refusal prints every reason and exits with code 3.
 
