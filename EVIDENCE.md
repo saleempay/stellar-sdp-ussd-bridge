@@ -999,3 +999,109 @@ to Africa's Talking remains on it.
 
 Suite, typecheck and secret scan: recorded in the pull request that
 carries this entry.
+
+## 2026-10-18: Deliverable 4, part 3, the five USSD sessions after the batch recorded on video
+
+### What this section proves, in plain language
+
+Each of the five recipients paid by the 7 October batch dialled the
+sandbox service code in the Africa's Talking simulator and saw the
+account screen with the balance the batch paid and the "Last received"
+line for that payment, and this time each session was recorded on video
+from the simulator screen. r2 entered one wrong PIN first and saw E1
+"Wrong PIN. 2 attempts left". r3 dialled a second time and opened the
+About screen. r4 had no PIN (its record from 11 October was removed
+before the run so that the provisioned path could be shown) and set one
+on first dial (D-1: screens 2 and 3, then 7). The five clips, one per
+recipient, are in `docs/evidence/` with the PIN entry blurred; evidence
+row 4.3 now points at them.
+
+### Environment
+
+- Capture server from 17:41 UTC (branch `docs/gateway-facts-recording-2026-10-18`
+  at the content of main `5558b66`, the capture script owning the tunnel,
+  started detached from the shell): a cloudflared quick tunnel at
+  17:41:56 UTC on hostname `cornwall-declared-even-roberts.trycloudflare.com`,
+  the only tunnel start of the session; a fresh callback path in `.env`
+  (the adapter requires it to start with `/`); creation on dial off;
+  stores from the 7 October provisioning run (`DATA_DIR`).
+- Readiness at 17:43:18 UTC: the hostname resolved on 1.1.1.1 and 8.8.8.8
+  and a well-formed gateway POST through the public URL returned screen 1;
+  READY TO DIAL. An earlier start of the same script at 13:31 UTC on
+  another hostname was lost with the shell that started it and was never
+  dialled.
+- The callback was saved on channel `*384*45210#` by the operator from
+  the clipboard. Every gateway request in the record is a POST on the
+  callback path with user agent `at-ussd-api/1.0` from `18.133.205.228`,
+  answered 200; the slowest answer took under 1.2 s.
+- The simulator used is the one at developers.africastalking.com (plain
+  HTTPS). The host `simulator.africastalking.com` on port 1517, used on
+  7 and 11 October, did not answer from this network on 18 October.
+- Dialling: the sessions from 18:18 UTC were driven by a Playwright script
+  (headed Chromium, one browser context per recipient with video on) that
+  reads the numbers and PINs from a local file outside every repository
+  and never prints them; the keypad is clicked, the reply popup's field is
+  filled, Send is clicked. The 17:54 and 17:57 sessions were dialled by
+  hand by the operator.
+- Record: `docs/evidence/d4-ussd-capture-2026-10-18.json` (MSISDNs masked,
+  every four-digit input masked, callback path never written, the
+  operator's own address on the probes replaced by `<operator address>`,
+  the gateway's address kept), a snapshot taken after the last session.
+
+### The sessions (times UTC, inputs masked)
+
+The 31 gateway requests in the record fall into eleven sessions:
+
+| Session | Number | Callbacks | Inputs | Final screen |
+|---|---|---|---|---|
+| 17:54:41 | r1 `+2547***5311` | 1 | (dial) | CON Saleem / 1. My account / 2. About (connectivity dial by hand) |
+| 17:54:55 to 17:55:08 | r1 | 2 | (dial), 1 | CON Enter your PIN (ended by the operator) |
+| 17:57:31 to 17:58:19 | r1 | 5 | (dial), 1, ####, ####, #### | E1 "2 attempts left", E1 "1 attempt left", then END Signed in as GDMN..QUUU / Balance 1.50 USDC / Last received 1.50 USDC, 7 Oct / Test only, no funds move (by hand; two mistyped PINs, the counter reset on success) |
+| 18:18:49 | r1 | 1 | (dial) | CON Saleem / 1. My account / 2. About (the script's exploration dial, cancelled) |
+| 18:20:46 to 18:20:52 | r1 | 3 | (dial), 1, #### | END Signed in as GDMN..QUUU / Balance 1.50 USDC / Last received 1.50 USDC, 7 Oct / Test only, no funds move. Clip `d4-ussd-r1-returning-2026-10-18.mp4` |
+| 18:22:10 to 18:22:20 | r2 `+2547***5322` | 4 | (dial), 1, ####, #### | E1 "Wrong PIN. 2 attempts left" on the first PIN, then END Signed in as GA6R..ZCNA / Balance 2.00 USDC / Last received 2.00 USDC, 7 Oct / Test only, no funds move. Clip `d4-ussd-r2-wrong-pin-then-right-2026-10-18.mp4` |
+| 18:23:07 to 18:23:15 | r3 `+2547***5333` | 3 | (dial), 1, #### | END Signed in as GADZ..HMBZ / Balance 2.50 USDC / Last received 2.50 USDC, 7 Oct / Test only, no funds move (first attempt; the script then appended a second code to the dial field, so its About dial never reached the gateway; attempt discarded, no clip) |
+| 18:25:39 to 18:25:45 | r3 | 3 | (dial), 1, #### | the same account screen for GADZ..HMBZ, 2.50 USDC |
+| 18:25:53 to 18:25:57 | r3 | 2 | (dial), 2 | END Saleem, a payment service for basic phones. / saleem.digital / Test only, no funds move. Both r3 dials are in clip `d4-ussd-r3-returning-then-about-2026-10-18.mp4` |
+| 18:26:44 to 18:26:51 | r5 `+2547***5355` | 3 | (dial), 1, #### | END Signed in as GCKM..XAAX / Balance 3.50 USDC / Last received 3.50 USDC, 7 Oct / Test only, no funds move. Clip `d4-ussd-r5-returning-2026-10-18.mp4` |
+| 18:27:41 to 18:27:51 | r4 `+2547***5344` | 4 | (dial), 1, ####, #### | Create a 4 digit PIN, Enter the PIN again, then END Signed in as GBFQ..FAVO / Balance 3.00 USDC / Last received 3.00 USDC, 7 Oct / Test only, no funds move. Clip `d4-ussd-r4-provisioned-path-2026-10-18.mp4` |
+
+The balances and "Last received" amounts match the batch of 7 October
+(1.5, 2, 2.5, 3 and 3.5 USDC, ledgers 5071608 to 5071614).
+
+### The clips
+
+Each clip is the simulator phone cropped from the browser recording
+(480 by 1024, H.264), starting three seconds before the dial and ending
+after the final screen, with the reply popup's input field blurred while
+a PIN is typed and sent (the blur window runs from before the first digit
+until the next screen has replaced the popup); nothing else is altered.
+The raw browser recordings (1280 by 900, the whole page) are held outside
+the repository.
+
+| Clip | Length | SHA-256 |
+|---|---|---|
+| `docs/evidence/d4-ussd-r1-returning-2026-10-18.mp4` | 18 s | `da6b6a54ffa3203f9ea22b4ff9b96530646d6e7ee8fa98a6673136c7b88e49f0` |
+| `docs/evidence/d4-ussd-r2-wrong-pin-then-right-2026-10-18.mp4` | 21 s | `070f0c0a79cddb85928be5b0a27b88f512f470adf323132f124ad5e221747701` |
+| `docs/evidence/d4-ussd-r3-returning-then-about-2026-10-18.mp4` | 29 s | `ab99b4caeb71dbab8eb25aeff4a2bd34fb42dab7370ea86d6eff6802822ceba8` |
+| `docs/evidence/d4-ussd-r5-returning-2026-10-18.mp4` | 18 s | `ef9cb44b52cc1d3d5401c895dbf16c6485b6a90de6aec8b3d484e9fdb99025dc` |
+| `docs/evidence/d4-ussd-r4-provisioned-path-2026-10-18.mp4` | 21 s | `2964a57129a3b1a06488d29761d3ecfee30049f1e15c4138944ffaddc483df01` |
+
+### Findings while running
+
+- r4's PIN record from 11 October was removed from the local PIN store
+  before the run (a backup kept locally) so that the provisioned path
+  could be recorded; r4 now holds the PIN it created in this session.
+  The other four records were untouched and their failure counters read 0
+  before the run.
+- The 7 October raw recordings on the operator's Mac are three, not two:
+  the two listed under "Video of session set 4" and a third,
+  `Screen Recording 2026-10-07 at 18.14.15.mov` (6 min 54 s, 172 MB,
+  SHA-256 `4243d45908621cebb271d51c14cc15aa53f41de016b82ea59d8dc260fa398ff8`),
+  which holds the failed dials after the batch that day. None of the
+  three is published.
+
+### Offline checks
+
+Suite, typecheck and secret scan: recorded in the pull request that
+carries this entry.
