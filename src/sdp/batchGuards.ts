@@ -23,9 +23,17 @@
  *    checks no other disbursement's status, only the balance against this
  *    amount plus every in-progress payment of the same wallet
  *    (:326-359, PaymentInProgressStatuses = READY, PENDING, PAUSED).
- * 3. The environment's run log records no completed batch for the current
- *    UTC day, unless `--second-run "<reason>"` is given; the reason is
- *    written to the run log entry.
+ * 3. No batch was started on the current UTC day, unless `--second-run
+ *    "<reason>"` is given; the reason is written to the run log entry. Two
+ *    sources decide, either suffices (review of 13 October 2026, finding 2):
+ *    the run log's `started` entries of the day (a batch that moved money
+ *    and then failed, timed out or was interrupted has no COMPLETED line),
+ *    and the SDP itself: every disbursement in STARTED, PAUSED or COMPLETED
+ *    whose `status_history` (disbursements.go:27,59-63) holds a STARTED
+ *    entry dated today, whatever machine or path started it. The local log
+ *    stays the record of reasons.
+ * 4. The listings cover every distribution account of the tenant, paged
+ *    (page_limit 100), not one page of the selected account.
  *
  * The run log is one JSON object per line, appended when a batch starts
  * and when it finishes. Accounts in it are masked by the caller; it holds
@@ -92,6 +100,42 @@ export function completedBatchesOn(entries: RunLogEntry[], day: string): RunLogE
   return entries.filter((e) => e.event === 'finished' && e.finalStatus === COMPLETED_DISBURSEMENT_STATUS && utcDay(e.at) === day);
 }
 
+/**
+ * Run log entries that show a batch was started on the given UTC day: every
+ * `started` entry, plus a completed `finished` entry whose start was not
+ * logged (one disbursement counted once).
+ */
+export function startedBatchesOn(entries: RunLogEntry[], day: string): RunLogEntry[] {
+  const seen = new Set<string>();
+  const out: RunLogEntry[] = [];
+  for (const e of entries) {
+    const counts = utcDay(e.at) === day && (e.event === 'started' || (e.event === 'finished' && e.finalStatus === COMPLETED_DISBURSEMENT_STATUS));
+    if (counts && !seen.has(e.disbursementId)) { seen.add(e.disbursementId); out.push(e); }
+  }
+  return out;
+}
+
+/** dibursements_state_machine.go:13-15: the statuses a disbursement can hold once it has been started. */
+export const STARTED_EVER_DISBURSEMENT_STATUSES = ['STARTED', 'PAUSED', 'COMPLETED'] as const;
+
+/** The time the SDP recorded the STARTED transition, from status_history; undefined when the history carries none. */
+export function startedAtOf(d: Disbursement): string | undefined {
+  return d.status_history?.find((h) => String(h.status).toUpperCase() === 'STARTED')?.timestamp;
+}
+
+/** Every disbursement in the statuses, across the given distribution accounts (undefined = the tenant's default), paging through each listing. */
+export async function disbursementsInStatuses(client: SdpTenantClient, statuses: readonly string[], walletIds: ReadonlyArray<string | undefined>): Promise<Disbursement[]> {
+  const found = new Map<string, Disbursement>();
+  for (const walletId of walletIds) {
+    for (let page = 1; ; page += 1) {
+      const res = await client.listDisbursements({ status: [...statuses], page, pageLimit: PAGE_LIMIT }, walletId);
+      for (const d of res.data) found.set(d.id, d);
+      if (res.data.length < PAGE_LIMIT) break;
+    }
+  }
+  return [...found.values()];
+}
+
 export class BatchGuardError extends Error {
   constructor(readonly reasons: string[]) {
     super(`batch refused: ${reasons.join('; ')}`);
@@ -102,6 +146,8 @@ export class BatchGuardError extends Error {
 export interface BatchGuardInput {
   client: SdpTenantClient;
   walletId?: string;
+  /** Every distribution account of the tenant; the listings cover all of them. Defaults to [walletId]. */
+  walletIds?: string[];
   /** The disbursement about to be started. */
   disbursementId: string;
   runLog: RunLogEntry[];
@@ -112,7 +158,10 @@ export interface BatchGuardInput {
 
 export interface BatchGuardResult {
   inFlight: Disbursement[];
+  /** Kept for the report: completed entries of the day in the run log. */
   completedToday: RunLogEntry[];
+  /** What says a batch was started today: run log entries and SDP disbursements. */
+  startedToday: { log: RunLogEntry[]; sdp: Disbursement[] };
   /** Paused disbursements the flag allowed past (every payment of theirs beyond READY and PENDING). */
   pausedAllowed: Disbursement[];
   /** In-progress payments (READY, PENDING, PAUSED) of the paused disbursements, as the SDP will count them against the balance. */
@@ -121,26 +170,29 @@ export interface BatchGuardResult {
 
 const disbursementIdOf = (p: Payment): string | undefined => (p.disbursement as { id?: string } | undefined)?.id;
 
-/** Every payment of the given disbursements in one of the statuses, paging through the tenant's list. */
-export async function paymentsInStatuses(client: SdpTenantClient, disbursementIds: Set<string>, statuses: readonly string[], walletId?: string): Promise<Payment[]> {
-  const found: Payment[] = [];
-  for (const status of statuses) {
-    for (let page = 1; ; page += 1) {
-      const res = await client.listPayments(walletId, { status, page, pageLimit: PAGE_LIMIT });
-      for (const p of res.data) {
-        const id = disbursementIdOf(p);
-        if (id && disbursementIds.has(id)) found.push(p);
+/** Every payment of the given disbursements in one of the statuses, across the given distribution accounts, paging through each listing. */
+export async function paymentsInStatuses(client: SdpTenantClient, disbursementIds: Set<string>, statuses: readonly string[], walletIds: ReadonlyArray<string | undefined>): Promise<Payment[]> {
+  const found = new Map<string, Payment>();
+  for (const walletId of walletIds) {
+    for (const status of statuses) {
+      for (let page = 1; ; page += 1) {
+        const res = await client.listPayments(walletId, { status, page, pageLimit: PAGE_LIMIT });
+        for (const p of res.data) {
+          const id = disbursementIdOf(p);
+          if (id && disbursementIds.has(id)) found.set(p.id, p);
+        }
+        if (res.data.length < PAGE_LIMIT) break;
       }
-      if (res.data.length < PAGE_LIMIT) break;
     }
   }
-  return found;
+  return [...found.values()];
 }
 
 /** Throws BatchGuardError naming every reason; returns what it saw otherwise. */
 export async function guardBatchStart(input: BatchGuardInput): Promise<BatchGuardResult> {
   const reasons: string[] = [];
-  const inFlight = (await input.client.listDisbursements({ status: [...IN_FLIGHT_DISBURSEMENT_STATUSES] }, input.walletId)).data;
+  const walletIds: ReadonlyArray<string | undefined> = input.walletIds?.length ? input.walletIds : [input.walletId];
+  const inFlight = await disbursementsInStatuses(input.client, IN_FLIGHT_DISBURSEMENT_STATUSES, walletIds);
   const paused: Disbursement[] = [];
   for (const d of inFlight) {
     if (d.id === input.disbursementId) {
@@ -157,7 +209,7 @@ export async function guardBatchStart(input: BatchGuardInput): Promise<BatchGuar
   const pausedAllowed: Disbursement[] = [];
   if (paused.length) {
     const ids = new Set(paused.map((d) => d.id));
-    pausedInProgress = await paymentsInStatuses(input.client, ids, PAYMENT_IN_PROGRESS_STATUSES, input.walletId);
+    pausedInProgress = await paymentsInStatuses(input.client, ids, PAYMENT_IN_PROGRESS_STATUSES, walletIds);
     const reaching = pausedInProgress.filter((p) => (PAYMENT_CAN_REACH_NETWORK as readonly string[]).includes(p.status));
     for (const d of paused) {
       const mine = reaching.filter((p) => disbursementIdOf(p) === d.id);
@@ -169,11 +221,17 @@ export async function guardBatchStart(input: BatchGuardInput): Promise<BatchGuar
       }
     }
   }
-  const completedToday = completedBatchesOn(input.runLog, utcDay(input.now));
-  if (completedToday.length && !input.secondRunReason) {
-    const ids = completedToday.map((e) => e.disbursementId).join(', ');
-    reasons.push(`the run log already records a completed batch today (${ids}); pass --second-run "<reason>" to run another`);
+  const day = utcDay(input.now);
+  const completedToday = completedBatchesOn(input.runLog, day);
+  const startedLog = startedBatchesOn(input.runLog, day);
+  const startedSdp = (await disbursementsInStatuses(input.client, STARTED_EVER_DISBURSEMENT_STATUSES, walletIds))
+    .filter((d) => { const at = startedAtOf(d); return at !== undefined && utcDay(at) === day; });
+  if ((startedLog.length || startedSdp.length) && !input.secondRunReason) {
+    const parts: string[] = [];
+    if (startedLog.length) parts.push(`the run log records ${startedLog.length} started today (${startedLog.map((e) => e.disbursementId).join(', ')})`);
+    if (startedSdp.length) parts.push(`the SDP shows ${startedSdp.length} started today (${startedSdp.map((d) => `${d.id} "${d.name}" ${d.status}`).join(', ')})`);
+    reasons.push(`a batch was already started today: ${parts.join('; ')}; pass --second-run "<reason>" to run another`);
   }
   if (reasons.length) throw new BatchGuardError(reasons);
-  return { inFlight, completedToday, pausedAllowed, pausedInProgress };
+  return { inFlight, completedToday, startedToday: { log: startedLog, sdp: startedSdp }, pausedAllowed, pausedInProgress };
 }

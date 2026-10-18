@@ -7,8 +7,11 @@ import {
   BatchGuardError,
   IN_FLIGHT_DISBURSEMENT_STATUSES,
   RunLog,
+  STARTED_EVER_DISBURSEMENT_STATUSES,
   completedBatchesOn,
   guardBatchStart,
+  startedAtOf,
+  startedBatchesOn,
   utcDay,
   type RunLogEntry,
 } from '../../src/sdp/batchGuards.js';
@@ -19,13 +22,19 @@ const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 type FakePayment = { id: string; status: string; amount: string; disbursement: string };
-function tenantWith(disbursements: Array<{ id: string; name: string; status: string }>, payments: FakePayment[] = []) {
+type FakeDisbursement = { id: string; name: string; status: string; wallet?: string; status_history?: Array<{ status: string; timestamp: string }> };
+function tenantWith(disbursements: FakeDisbursement[], payments: FakePayment[] = []) {
   const { fetchImpl, calls } = fakeFetch((r: Recorded) => {
     const u = new URL(r.url);
+    const wallet = r.headers['X-Wallet-Id'];
     if (u.pathname === '/disbursements') {
       const wanted = (u.searchParams.get('status') ?? '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
-      const data = disbursements.filter((d) => !wanted.length || wanted.includes(d.status));
-      return { status: 200, body: data.length ? { data, pagination: { total: data.length } } : { data: [], pagination: {} } };
+      // a disbursement that names a wallet is listed under that wallet only (multi-account tenant)
+      const all = disbursements.filter((d) => (!wanted.length || wanted.includes(d.status)) && (!d.wallet || !wallet || d.wallet === wallet));
+      const limit = Number(u.searchParams.get('page_limit') ?? 20);
+      const page = Number(u.searchParams.get('page') ?? 1);
+      const data = all.slice((page - 1) * limit, page * limit);
+      return { status: 200, body: { data, pagination: { total: all.length } } };
     }
     if (u.pathname === '/payments') {
       // one status per request (payment_query_validator.go:62-70), paged
@@ -119,13 +128,23 @@ describe('guardBatchStart: the run log', () => {
     const t = tenantWith([]);
     const log = [finished('2026-10-26T09:00:00Z', 'COMPLETED')];
     const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: log, now: NOW }).catch((e: unknown) => e);
-    expect((err as BatchGuardError).reasons).toEqual(['the run log already records a completed batch today (d-old); pass --second-run "<reason>" to run another']);
+    expect((err as BatchGuardError).reasons).toEqual(['a batch was already started today: the run log records 1 started today (d-old); pass --second-run "<reason>" to run another']);
   });
 
-  it('passes when the completed batch was another day, or today\'s batch did not complete', async () => {
+  it('passes when the completed batch was another day', async () => {
     const t = tenantWith([]);
     await expect(guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [finished('2026-10-25T23:59:59Z', 'COMPLETED')], now: NOW })).resolves.toBeDefined();
-    await expect(guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [finished('2026-10-26T09:00:00Z', 'STARTED'), { ...finished('2026-10-26T09:00:00Z', 'x'), event: 'started', finalStatus: undefined }], now: NOW })).resolves.toBeDefined();
+  });
+
+  it('a batch started today that never completed (failed, timed out, interrupted) counts: the started entry alone refuses (review of 13 October, finding 2)', async () => {
+    const t = tenantWith([]);
+    const startedOnly: RunLogEntry = { at: '2026-10-26T09:00:00Z', event: 'started', tenant: 'bridge', network: 'testnet', disbursementId: 'd-morning', total: '12.5000000' };
+    const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [startedOnly], now: NOW }).catch((e: unknown) => e);
+    expect((err as BatchGuardError).reasons).toEqual(['a batch was already started today: the run log records 1 started today (d-morning); pass --second-run "<reason>" to run another']);
+    // a batch that finished FAILED today counts through its started entry; a started entry from yesterday does not
+    const failedToday = [{ ...startedOnly }, finished('2026-10-26T09:05:00Z', 'STARTED', 'd-morning')];
+    await expect(guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: failedToday, now: NOW })).rejects.toBeInstanceOf(BatchGuardError);
+    await expect(guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [{ ...startedOnly, at: '2026-10-25T09:00:00Z' }], now: NOW })).resolves.toBeDefined();
   });
 
   it('the UTC day boundary decides, not local time', async () => {
@@ -141,6 +160,8 @@ describe('guardBatchStart: the run log', () => {
     const log = [finished('2026-10-26T09:00:00Z', 'COMPLETED', 'd-morning')];
     const seen = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: log, now: NOW, secondRunReason: 'drain to treasury' });
     expect(seen.completedToday.map((e) => e.disbursementId)).toEqual(['d-morning']);
+    expect(seen.startedToday.log.map((e) => e.disbursementId)).toEqual(['d-morning']);
+    expect(seen.startedToday.sdp).toEqual([]);
   });
 
   it('both reasons are reported together', async () => {
@@ -166,5 +187,67 @@ describe('RunLog file', () => {
     expect(log.read()).toHaveLength(2);
     expect(completedBatchesOn(log.read(), '2026-10-26').map((e) => e.disbursementId)).toEqual(['d1']);
     expect(completedBatchesOn(log.read(), '2026-10-27')).toEqual([]);
+  });
+});
+
+describe('guardBatchStart: the SDP is the second source for "started today" (review of 13 October, finding 2)', () => {
+  const started = (ts: string) => [{ status: 'READY', timestamp: '2026-10-20T08:00:00Z' }, { status: 'STARTED', timestamp: ts }];
+
+  it('a disbursement whose status history shows STARTED today refuses with no run log at all, in STARTED, PAUSED or COMPLETED', async () => {
+    for (const status of STARTED_EVER_DISBURSEMENT_STATUSES) {
+      const t = tenantWith([{ id: 'd7', name: 'other machine', status, status_history: started('2026-10-26T09:30:00Z') }]);
+      const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BatchGuardError);
+      const text = (err as BatchGuardError).reasons.join(' ');
+      expect(text).toContain(`the SDP shows 1 started today (d7 "other machine" ${status})`);
+      // in STARTED and PAUSED the in-flight rule speaks as well
+      expect((err as BatchGuardError).reasons).toHaveLength(status === 'COMPLETED' ? 1 : 2);
+      expect(t.calls.map((c) => new URL(c.url).searchParams.get('status'))).toContain('STARTED,PAUSED,COMPLETED');
+    }
+  });
+
+  it('a disbursement started yesterday, or completed without a STARTED entry in its history, does not count; the UTC day decides', async () => {
+    const t = tenantWith([
+      { id: 'd5', name: 'yesterday', status: 'COMPLETED', status_history: started('2026-10-25T23:59:59Z') },
+      { id: 'd6', name: 'no history', status: 'COMPLETED' },
+    ]);
+    const seen = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW });
+    expect(seen.startedToday.sdp).toEqual([]);
+    expect(startedAtOf({ id: 'x', name: 'x', status: 'COMPLETED', status_history: started('2026-10-26T01:00:00Z') })).toBe('2026-10-26T01:00:00Z');
+    expect(startedAtOf({ id: 'x', name: 'x', status: 'COMPLETED' })).toBeUndefined();
+  });
+
+  it('with the flag the SDP-side start is reported, not refused', async () => {
+    const t = tenantWith([{ id: 'd7', name: 'done', status: 'COMPLETED', status_history: started('2026-10-26T09:30:00Z') }]);
+    const seen = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW, secondRunReason: 'drain' });
+    expect(seen.startedToday.sdp.map((d) => d.id)).toEqual(['d7']);
+  });
+
+  it('a STARTED disbursement on another distribution account is seen when every account is listed, and missed when only one is', async () => {
+    const t = tenantWith([{ id: 'd9', name: 'on b', status: 'STARTED', wallet: 'dw-b' }]);
+    await expect(guardBatchStart({ client: t.client, walletId: 'dw-a', disbursementId: 'd1', runLog: [], now: NOW })).resolves.toBeDefined();
+    const err = await guardBatchStart({ client: t.client, walletId: 'dw-a', walletIds: ['dw-a', 'dw-b'], disbursementId: 'd1', runLog: [], now: NOW }).catch((e: unknown) => e);
+    expect((err as BatchGuardError).reasons).toEqual(['the tenant has disbursement d9 ("on b") in STARTED; no flag lifts this, pause or finish it first']);
+    expect(t.calls.filter((c) => c.url.includes('/disbursements')).map((c) => c.headers['X-Wallet-Id'])).toEqual(expect.arrayContaining(['dw-a', 'dw-b']));
+  });
+
+  it('pages through more than 100 disbursements with page_limit 100', async () => {
+    const many: FakeDisbursement[] = Array.from({ length: 120 }, (_, i) => ({ id: `c${i}`, name: `c${i}`, status: 'COMPLETED', status_history: started(i === 119 ? '2026-10-26T07:00:00Z' : '2026-10-01T07:00:00Z') }));
+    const t = tenantWith(many);
+    const err = await guardBatchStart({ client: t.client, disbursementId: 'd1', runLog: [], now: NOW }).catch((e: unknown) => e);
+    expect((err as BatchGuardError).reasons.join(' ')).toContain('c119');
+    const pages = t.calls.filter((c) => new URL(c.url).searchParams.get('status') === 'STARTED,PAUSED,COMPLETED').map((c) => [new URL(c.url).searchParams.get('page'), new URL(c.url).searchParams.get('page_limit')]);
+    expect(pages).toEqual([['1', '100'], ['2', '100']]);
+  });
+
+  it('startedBatchesOn counts each disbursement once, from started entries and from completed entries without one', () => {
+    const log: RunLogEntry[] = [
+      { at: '2026-10-26T09:00:00Z', event: 'started', tenant: 'bridge', network: 'testnet', disbursementId: 'a' },
+      finished('2026-10-26T09:01:00Z', 'COMPLETED', 'a'),
+      finished('2026-10-26T10:00:00Z', 'COMPLETED', 'b'),
+      finished('2026-10-26T11:00:00Z', 'STARTED', 'c'),
+    ];
+    expect(startedBatchesOn(log, '2026-10-26').map((e) => e.disbursementId)).toEqual(['a', 'b']);
+    expect(startedBatchesOn(log, '2026-10-27')).toEqual([]);
   });
 });

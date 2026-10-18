@@ -16,8 +16,10 @@
  *   PAUSED refuses unless --second-run "<reason>" is given and none of its
  *   payments is READY or PENDING (the states that reach the network without a
  *   further operator action);
- * - the run log (BATCH_RUN_LOG, default data/batch-run-log.jsonl) must record
- *   no completed batch for the current UTC day, unless --second-run "<reason>"
+ * - no batch may have been started on the current UTC day, by the run log
+ *   (BATCH_RUN_LOG, default data/batch-run-log.jsonl: any started entry) or
+ *   by the SDP (a disbursement whose status history shows STARTED today, on
+ *   any distribution account of the tenant), unless --second-run "<reason>"
  *   is given; the reason is written to the run log.
  *
  * --check-only prints the balance against the disbursement's total and the
@@ -99,11 +101,11 @@ if (checkOnly) {
   console.log(Number(usdc) >= Number(total) ? 'balance covers the total' : 'balance does NOT cover the total');
   console.log(`balance within the ${caps.maxAccountUsdc} USDC ceiling; every payment within ${caps.maxPaymentUsdc} USDC and the total within ${caps.maxBatchUsdc} USDC`);
   try {
-    const seen = await guardBatchStart({ client, walletId, disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
+    const seen = await guardBatchStart({ client, walletId, walletIds: accounts.map((a) => a.id), disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
     const pausedNote = seen.pausedAllowed.length
       ? `; ${seen.pausedAllowed.length} paused disbursement(s) allowed past by the reason, with ${seen.pausedInProgress.length} payment(s) totalling ${totalAmount(seen.pausedInProgress)} USDC that the SDP still counts against the balance`
       : '';
-    console.log(`guards pass: nothing STARTED; ${seen.completedToday.length} completed batch(es) recorded today${secondRunReason ? ' (second run allowed by the given reason)' : ''}${pausedNote}`);
+    console.log(`guards pass: nothing STARTED on any of the ${accounts.length} distribution account(s); started today: ${seen.startedToday.log.length} in the run log, ${seen.startedToday.sdp.length} in the SDP${secondRunReason ? ' (second run allowed by the given reason)' : ''}${pausedNote}`);
   } catch (e) {
     if (e instanceof BatchGuardError) { console.error(`guards would refuse a start: ${e.reasons.join('; ')}`); process.exit(3); }
     throw e;
@@ -115,7 +117,7 @@ if (checkOnly) {
 let pausedAllowed = [];
 if (!skipStart) {
   try {
-    const seen = await guardBatchStart({ client, walletId, disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
+    const seen = await guardBatchStart({ client, walletId, walletIds: accounts.map((a) => a.id), disbursementId, runLog: runLog.read(), now: new Date(), secondRunReason });
     pausedAllowed = seen.pausedAllowed.map((d) => d.id);
   } catch (e) {
     if (e instanceof BatchGuardError) { console.error(`refused: ${e.reasons.join('; ')}`); process.exit(3); }

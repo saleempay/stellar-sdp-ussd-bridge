@@ -229,6 +229,10 @@ export interface Disbursement {
   registration_contact_type?: string;
   /** Payment rows of the disbursement (internal/data/disbursements.go:43). */
   total_payments?: number;
+  /** Every status the disbursement went through, with its time (internal/data/disbursements.go:27,59-63). */
+  status_history?: Array<{ user_id?: string; status: string; timestamp: string }>;
+  created_at?: string;
+  updated_at?: string;
   [key: string]: unknown;
 }
 
@@ -588,11 +592,22 @@ export class SdpTenantClient {
    * insensitive (validators/disbursement_query_validator.go:55-69). One
    * page; the tenants this bridge serves hold a handful of disbursements.
    */
-  async listDisbursements(filter: { status?: string[] } = {}, walletId?: string): Promise<Paginated<Disbursement>> {
-    const query = filter.status?.length ? `?status=${encodeURIComponent(filter.status.join(','))}` : '';
+  /**
+   * GET /disbursements, one page. `status` is a comma-separated list
+   * (validators/disbursement_query_validator.go:55-65 at 7.0.0); `page` and
+   * `page_limit` as for every listing (query_validator.go:29-30, default 20,
+   * at most 100, :23-24,93-94). Each disbursement carries `status_history`
+   * (internal/data/disbursements.go:27, entries :59-63).
+   */
+  async listDisbursements(filter: { status?: string[]; page?: number; pageLimit?: number } = {}, walletId?: string): Promise<Paginated<Disbursement>> {
+    const q = new URLSearchParams();
+    if (filter.status?.length) q.set('status', filter.status.join(','));
+    if (filter.page !== undefined) q.set('page', String(filter.page));
+    if (filter.pageLimit !== undefined) q.set('page_limit', String(filter.pageLimit));
+    const query = q.toString();
     const res = await this.request({
       method: 'GET',
-      path: `/disbursements${query}`,
+      path: `/disbursements${query ? `?${query}` : ''}`,
       headers: this.headers(this.walletHeader(walletId)),
     });
     return json<Paginated<Disbursement>>(res);
