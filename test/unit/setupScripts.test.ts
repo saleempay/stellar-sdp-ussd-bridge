@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TESTNET_EXPLORER_BASE_URL } from '../../src/sdp/facts.js';
 
 const repo = resolve(process.cwd());
@@ -35,13 +35,6 @@ function run(script: string, cwd: string, args: string[], env: Record<string, st
 }
 
 const seedPattern = /\bS[A-Z2-7]{55}\b/;
-
-beforeAll(() => {
-  if (!existsSync(join(repo, 'dist', 'index.js'))) {
-    const b = spawnSync('npm', ['run', '-s', 'build'], { cwd: repo, encoding: 'utf8' });
-    if (b.status !== 0) throw new Error(`build failed: ${b.stderr}`);
-  }
-});
 
 afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
