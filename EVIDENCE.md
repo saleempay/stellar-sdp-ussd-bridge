@@ -945,3 +945,57 @@ the first two in the pull request that carries this entry.
 
 Suite, typecheck and secret scan: recorded in the pull request that
 carries this entry.
+
+## 2026-10-18: the gateway's reply of 12 October recorded in full; the sandbox fault closed
+
+### What this entry records, in plain language
+
+The written reply from Africa's Talking of 12 October 2026, 13:54 UTC, to
+the walkthrough notice is recorded here in full, because it closes
+several open items at once; and the sandbox fault first reported on
+7 October is closed as ours.
+
+### The reply of 12 October 2026, 13:54 UTC
+
+Africa's Talking (the USSD support address) stated:
+
+1. The change request is approved to proceed: deviation D-1, the eleven
+   additions A-1 to A-11 (`docs/walkthrough-deviations.md`), and the
+   closing line of screens 7 and 8 reading "Demonstration service" in
+   production in place of "Test only, no funds move" (the sandbox keeps
+   the contracted line).
+2. Its USSD callbacks are sent from three addresses: `18.133.205.228`,
+   `35.177.236.113` and `3.8.44.1`. The capture records of 7, 10 and
+   11 October show the first of them on every gateway request.
+3. The shared service code works while roaming in the United Arab
+   Emirates and in Portugal as it does in Kenya.
+4. A callback URL change takes about five minutes to take effect, on the
+   sandbox and in production alike. This matches what was observed on
+   11 October (saved 07:17 and 07:22, first request on the new host at
+   07:28:52).
+5. The production service code is mapped once proof of payment for the
+   service order's invoice reaches them; 5 Lanes sends that proof on
+   18 October 2026. The callback is then set from our side in the
+   dashboard, as on the sandbox.
+
+Consequences for this repository: `USSD_ALLOWED_CIDRS` can now be set to
+the three addresses (`/32` each) for any exposure beyond the sandbox
+tunnel; the integration guide and `.env.example` already name all three
+(`AT_CALLBACK_ALLOWLIST`, documented, not enforced). The
+"Demonstration service" line is the value of `USSD_CLOSING_LINE` for a
+production run (a configuration introduced on an open branch; on main the
+line is still the contracted sandbox text).
+
+### The sandbox fault, closed
+
+The dials that failed on 7 and 10 October failed because the gateway
+dashboard held the hostname of an earlier quick tunnel (the correction
+entry of 11 October). The fault was ours. It was closed on 11 October,
+when the five sessions after the batch were captured on the first dial
+after the callback save took effect. The sandbox works; no open request
+to Africa's Talking remains on it.
+
+### Offline checks
+
+Suite, typecheck and secret scan: recorded in the pull request that
+carries this entry.
