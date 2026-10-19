@@ -150,13 +150,12 @@ describe('sponsorSigning self-test: the signature is checked, not reported (revi
     expect(ref.selfTested).toBe(false);
   });
 
-  it('BRIDGE_SIGNER_SELF_TEST: unset is on for testnet and off for any other network; on and off are explicit; anything else is refused', () => {
-    expect(selfTestEnabled({}, 'testnet')).toBe(true);
-    expect(selfTestEnabled({}, ' TestNet ')).toBe(true);
-    expect(selfTestEnabled({}, 'othernet')).toBe(false);
-    expect(selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: 'on' }, 'othernet')).toBe(true);
-    expect(selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: ' OFF ' }, 'testnet')).toBe(false);
-    expect(() => selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: 'yes' }, 'testnet')).toThrow(SignerConfigError);
+  it('BRIDGE_SIGNER_SELF_TEST: unset is on, on every network (ruling of 19 October); off is the explicit exception; anything else is refused', () => {
+    expect(selfTestEnabled({})).toBe(true);
+    expect(selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: '' })).toBe(true);
+    expect(selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: 'on' })).toBe(true);
+    expect(selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: ' OFF ' })).toBe(false);
+    expect(() => selfTestEnabled({ BRIDGE_SIGNER_SELF_TEST: 'yes' })).toThrow(SignerConfigError);
   });
 
   it('the envelope can never be submitted: sequence number 0, maxTime in the past, one ManageData operation; envelopeSignedBy needs a signature over the hash by that key', () => {
