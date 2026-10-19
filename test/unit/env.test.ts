@@ -56,10 +56,11 @@ describe('sdpConfigFromEnv: the email sender off testnet (fix round of 18 Octobe
     expect(sdpConfigFromEnv(full).resetThroughLog).toBe(true);
   });
 
-  it('another network refuses an unset sender, naming the variable and the reason', () => {
+  it('another network refuses an unset sender, naming the variable and the reason, alongside the other two settings', () => {
     const err = refusal({ ...full, ...OTHER });
     expect(err.reasons.join(' ')).toContain('EMAIL_SENDER_TYPE is not set');
     expect(err.reasons.join(' ')).toContain('log');
+    expect(err.reasons).toHaveLength(3);
   });
 
   it('another network refuses DRY_RUN in any case', () => {
@@ -70,7 +71,7 @@ describe('sdpConfigFromEnv: the email sender off testnet (fix round of 18 Octobe
   });
 
   it('another network with a real sender passes, in strict MFA mode and with the log reset path off', () => {
-    const cfg = sdpConfigFromEnv({ ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL', RPC_URL: 'https://rpc.example.test' });
+    const cfg = sdpConfigFromEnv({ ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL', RPC_URL: 'https://rpc.example.test', ENVIRONMENT: 'production', CORS_ALLOWED_ORIGINS: 'https://sdp.example.test' });
     expect(cfg.strictMfa).toBe(true);
     expect(cfg.resetThroughLog).toBe(false);
     expect(readinessConfigFor(cfg, cfg.tenants[0]!).resetThroughLog).toBe(false);
@@ -78,7 +79,7 @@ describe('sdpConfigFromEnv: the email sender off testnet (fix round of 18 Octobe
 });
 
 describe('sdpConfigFromEnv: RPC_URL is a network value too (fix round of 18 October)', () => {
-  const other = { ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL' };
+  const other = { ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL', ENVIRONMENT: 'production', CORS_ALLOWED_ORIGINS: 'https://sdp.example.test' };
 
   it('testnet: unset takes the testnet RPC, the testnet value passes, anything else is refused', () => {
     expect(sdpConfigFromEnv(full).rpcUrl).toBe(TESTNET_RPC_URL);
@@ -138,5 +139,34 @@ describe('composeEnvironment: compose runs with PATH, the asserted file and the 
 
   it('refuses a written volume name that disagrees with the computed one, before any command runs', () => {
     expect(() => composeEnvironment({ ...file, [POSTGRES_VOLUME_ENV]: 'proj_postgres-db-TestNet' }, shell)).toThrow(/SDP_POSTGRES_VOLUME in sdp\/.env does not equal/);
+  });
+});
+
+describe('sdpConfigFromEnv: ENVIRONMENT and CORS_ALLOWED_ORIGINS off testnet (fix round 3, 19 October)', () => {
+  const base = { ...full, ...OTHER, EMAIL_SENDER_TYPE: 'AWS_EMAIL', RPC_URL: 'https://rpc.example.test' };
+
+  it('testnet keeps the compose defaults: localhost and * pass, unset passes', () => {
+    expect(() => sdpConfigFromEnv({ ...full, ENVIRONMENT: 'localhost', CORS_ALLOWED_ORIGINS: '*' })).not.toThrow();
+    expect(() => sdpConfigFromEnv(full)).not.toThrow();
+  });
+
+  it('another network refuses ENVIRONMENT unset or localhost, in any case', () => {
+    const good = { CORS_ALLOWED_ORIGINS: 'https://sdp.example.test' };
+    expect(refusal({ ...base, ...good }).reasons).toEqual([expect.stringContaining('ENVIRONMENT is not set')]);
+    for (const v of ['localhost', 'LocalHost', ' localhost ']) expect(refusal({ ...base, ...good, ENVIRONMENT: v }).reasons).toEqual([expect.stringContaining('ENVIRONMENT is localhost, which is refused')]);
+    expect(() => sdpConfigFromEnv({ ...base, ...good, ENVIRONMENT: 'production' })).not.toThrow();
+  });
+
+  it('another network refuses CORS_ALLOWED_ORIGINS unset or any list that contains *', () => {
+    const good = { ENVIRONMENT: 'production' };
+    expect(refusal({ ...base, ...good }).reasons).toEqual([expect.stringContaining('CORS_ALLOWED_ORIGINS is not set')]);
+    for (const v of ['*', ' * ', 'https://a.example.test, *']) expect(refusal({ ...base, ...good, CORS_ALLOWED_ORIGINS: v }).reasons).toEqual([expect.stringContaining('CORS_ALLOWED_ORIGINS allows every origin (*)')]);
+    expect(() => sdpConfigFromEnv({ ...base, ...good, CORS_ALLOWED_ORIGINS: 'https://a.example.test,https://b.example.test' })).not.toThrow();
+  });
+
+  it('every refused setting is named at once', () => {
+    const err = refusal({ ...base, EMAIL_SENDER_TYPE: 'DRY_RUN', ENVIRONMENT: 'localhost', CORS_ALLOWED_ORIGINS: '*' });
+    expect(err.reasons).toHaveLength(3);
+    expect(err.reasons.map((r) => r.split(' ')[0])).toEqual(['EMAIL_SENDER_TYPE', 'ENVIRONMENT', 'CORS_ALLOWED_ORIGINS']);
   });
 });

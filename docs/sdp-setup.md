@@ -343,7 +343,9 @@ The bridge handles this in two ways (L2 fix round, 10 October 2026):
   (`internal/message/dry_run_client.go:17-21`), and the readiness step
   `owner login` reads reset links from that log. On any other network both
   are refused: the boot assertion refuses `EMAIL_SENDER_TYPE` unset or
-  `DRY_RUN` (`src/sdp/env.ts`, `assertSenderForNetwork`), and `owner login`
+  `DRY_RUN`, and since fix round 3 (19 October) `ENVIRONMENT` unset or
+  `localhost` and `CORS_ALLOWED_ORIGINS` unset or `*` as well
+  (`src/sdp/env.ts`, `assertStackSettingsForNetwork`), and `owner login`
   refuses the log-reading reset path, so the owner password is set through
   a real channel (the SDP's own reset email) before the readiness run. On
   testnet nothing changes.

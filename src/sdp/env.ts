@@ -128,18 +128,33 @@ export function composeEnvironment(fileEnv: EnvMap, base: Record<string, string 
 export const DRY_RUN_SENDER = 'DRY_RUN';
 
 /**
- * Off testnet the email sender may not be DRY_RUN: the MFA code the strict
- * client requires would otherwise land in the same log the password reset
- * path reads, and the second factor would add nothing over the first. The
- * variable must be set, so a forgotten value cannot fall back to the
- * compose default (DRY_RUN).
+ * Off testnet three stack settings may not keep their testnet defaults, and
+ * each must be set so a forgotten value cannot fall back to the compose
+ * default: EMAIL_SENDER_TYPE may not be DRY_RUN (the MFA code the strict
+ * client requires would land in the same log the password reset path
+ * reads); ENVIRONMENT may not be localhost; CORS_ALLOWED_ORIGINS may not be
+ * * (fix round 3, 19 October 2026). Every refusal is collected, so the
+ * message names each variable at once; values are not echoed beyond the
+ * refused literal.
  */
-export function assertSenderForNetwork(env: EnvMap, network: NetworkFacts): void {
+export function assertStackSettingsForNetwork(env: EnvMap, network: NetworkFacts): void {
   if (network.networkType === TESTNET_NETWORK_TYPE) return;
+  const t = network.networkType;
+  const reasons: string[] = [];
   const sender = (env.EMAIL_SENDER_TYPE ?? '').trim();
-  if (sender === '') throw new NetworkConfigError([`EMAIL_SENDER_TYPE is not set (required for network type "${network.networkType}"; DRY_RUN, the compose default, writes MFA codes and reset links to the container log)`]);
-  if (sender.toUpperCase() === DRY_RUN_SENDER) throw new NetworkConfigError([`EMAIL_SENDER_TYPE is ${DRY_RUN_SENDER}, which is refused for network type "${network.networkType}": the dry run sender writes MFA codes and password reset links to the sdp-api log`]);
+  if (sender === '') reasons.push(`EMAIL_SENDER_TYPE is not set (required for network type "${t}"; DRY_RUN, the compose default, writes MFA codes and reset links to the container log)`);
+  else if (sender.toUpperCase() === DRY_RUN_SENDER) reasons.push(`EMAIL_SENDER_TYPE is ${DRY_RUN_SENDER}, which is refused for network type "${t}": the dry run sender writes MFA codes and password reset links to the sdp-api log`);
+  const environment = (env.ENVIRONMENT ?? '').trim();
+  if (environment === '') reasons.push(`ENVIRONMENT is not set (required for network type "${t}"; localhost, the compose default, is a development setting)`);
+  else if (environment.toLowerCase() === 'localhost') reasons.push(`ENVIRONMENT is localhost, which is refused for network type "${t}"`);
+  const cors = (env.CORS_ALLOWED_ORIGINS ?? '').trim();
+  if (cors === '') reasons.push(`CORS_ALLOWED_ORIGINS is not set (required for network type "${t}"; *, the compose default, allows every origin)`);
+  else if (cors.split(',').map((o) => o.trim()).includes('*')) reasons.push(`CORS_ALLOWED_ORIGINS allows every origin (*), which is refused for network type "${t}"`);
+  if (reasons.length) throw new NetworkConfigError(reasons);
 }
+
+/** Kept for callers of the earlier name; the sender check is now part of assertStackSettingsForNetwork. */
+export const assertSenderForNetwork = assertStackSettingsForNetwork;
 
 /**
  * The bridge tenant and the scope test tenant, from the names in
@@ -160,7 +175,7 @@ export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
   const port = env.PORT ?? '8000';
   const adminPort = env.ADMIN_PORT ?? '8003';
   const network = assertNetwork(env);
-  assertSenderForNetwork(env, network);
+  assertStackSettingsForNetwork(env, network);
   const rpcUrl = assertRpcForNetwork(env, network);
   const testnet = network.networkType === TESTNET_NETWORK_TYPE;
   return {
