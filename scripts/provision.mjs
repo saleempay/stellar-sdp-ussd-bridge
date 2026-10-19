@@ -119,9 +119,9 @@ try { await verifyHorizonNetwork(network, { timeoutMs: Number(env.HORIZON_TIMEOU
 // completed in fix round 3).
 let signing;
 try {
-  const selfTest = selfTestEnabled(env, network.networkType);
+  const selfTest = selfTestEnabled(env);
   signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase, selfTest });
-  if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : `signer self-test: skipped (${(env.BRIDGE_SIGNER_SELF_TEST ?? '').trim() ? 'BRIDGE_SIGNER_SELF_TEST=off' : `default off for network type "${network.networkType}"`})`);
+  if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : 'signer self-test: skipped (BRIDGE_SIGNER_SELF_TEST=off)');
 } catch (e) {
   console.error(e instanceof SignerConfigError ? e.message : String(e));
   process.exit(2);

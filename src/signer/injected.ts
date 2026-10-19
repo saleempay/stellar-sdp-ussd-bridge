@@ -97,25 +97,27 @@ export interface SponsorSigningOptions {
    * verify the signature against SPONSOR_PUBLIC_KEY, so `canSignFor` is
    * checked rather than reported (review of 13 October 2026, minor). The
    * envelope carries sequence number 0 and a maxTime in the past, so no
-   * ledger can ever accept it. Ruling of 18 October 2026: behind
-   * BRIDGE_SIGNER_SELF_TEST (`selfTestEnabled`), default on for testnet and
-   * off for any other network; the run is logged, the signature never. The
-   * reference signer needs no self-test: it derives the public key from the
-   * secret it imports.
+   * ledger can ever accept it. Behind BRIDGE_SIGNER_SELF_TEST
+   * (`selfTestEnabled`): on by default on every network, since an injected
+   * signer off testnet is the deployment's real one and that is where a
+   * wrong key must be caught at boot rather than at the first transaction
+   * (ruling of 19 October 2026, reversing the 18 October default);
+   * BRIDGE_SIGNER_SELF_TEST=off turns it off. The run is logged, the
+   * signature never. The reference signer needs no self-test: it derives
+   * the public key from the secret it imports.
    */
   selfTest?: boolean;
 }
 
-/** `on` or `off`; unset means on for testnet and off for any other network. */
+/** `on` or `off`; unset means on, on every network. */
 export const SIGNER_SELF_TEST_ENV = 'BRIDGE_SIGNER_SELF_TEST';
 
-/** Whether the boot self-test runs for an injected signer, from the environment and the network type. */
-export function selfTestEnabled(env: EnvLike, networkType: string): boolean {
+/** Whether the boot self-test runs for an injected signer: on unless BRIDGE_SIGNER_SELF_TEST is exactly off. */
+export function selfTestEnabled(env: EnvLike): boolean {
   const raw = (env[SIGNER_SELF_TEST_ENV] ?? '').trim().toLowerCase();
-  if (raw === '') return networkType.trim().toLowerCase() === 'testnet';
-  if (raw === 'on') return true;
+  if (raw === '' || raw === 'on') return true;
   if (raw === 'off') return false;
-  throw new SignerConfigError(`${SIGNER_SELF_TEST_ENV} must be "on" or "off" (unset: on for testnet, off for any other network)`);
+  throw new SignerConfigError(`${SIGNER_SELF_TEST_ENV} must be "on" or "off" (unset: on, on every network)`);
 }
 
 /** maxTime of the self-test envelope: one second after the epoch, so it expired long ago. */

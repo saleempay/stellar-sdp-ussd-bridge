@@ -59,11 +59,11 @@ try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(`NOT 
 // with a signer injected through BRIDGE_SIGNER_MODULE (checked at boot).
 if (cfg.createOnDial) {
   try {
-    const selfTest = selfTestEnabled(env, cfg.network.networkType);
+    const selfTest = selfTestEnabled(env);
     const signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase: cfg.network.networkPassphrase, selfTest });
     cfg = { ...cfg, signer: signing.signer, sponsorPublicKey: signing.sponsorPublicKey, sponsorSecretKey: undefined };
     console.log(`signer: ${signing.injected ? 'injected (BRIDGE_SIGNER_MODULE)' : 'adapter reference signer'}`);
-    if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : `signer self-test: skipped (${(env.BRIDGE_SIGNER_SELF_TEST ?? '').trim() ? 'BRIDGE_SIGNER_SELF_TEST=off' : `default off for network type "${cfg.network.networkType}"`})`);
+    if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : 'signer self-test: skipped (BRIDGE_SIGNER_SELF_TEST=off)');
   } catch (e) { if (e instanceof SignerConfigError) { console.error(e.message); process.exit(2); } throw e; }
 }
 if (!cfg.callbackPath) { console.error('USSD_CALLBACK_PATH is not set in .env (a long random segment, never printed)'); process.exit(2); }
