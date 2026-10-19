@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -256,6 +256,69 @@ describe('scripts/provision.mjs refuses a bad injected signer at boot, before an
   it('on an accepted network the signer module is imported and its checks still run before any network call', () => {
     const dir = scratch([`SPONSOR_PUBLIC_KEY=${SPONSOR.publicKey()}`, 'BRIDGE_SIGNER_MODULE=./fixtures/importing-signer.mjs']);
     const r = run(dir, { FAKE_SIGNER_SPONSOR: Keypair.random().publicKey() });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('cannot sign for the sponsor account');
+    expect(existsSync(join(dir, 'signer-module-imported.txt'))).toBe(true);
+  });
+});
+
+describe('scripts/provision.mjs: the signer module is imported only after the live Horizon check (fix round 3, 19 October)', () => {
+  const dirs: string[] = [];
+  const children: Array<ReturnType<typeof spawn>> = [];
+  afterEach(() => { for (const c of children.splice(0)) c.kill(); for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
+  const OTHER_PASSPHRASE = 'Other Network ; Example Only';
+  const networkLines = (horizonUrl: string) => [
+    'NETWORK_TYPE=othernet', `NETWORK_PASSPHRASE=${OTHER_PASSPHRASE}`, `HORIZON_URL=${horizonUrl}`,
+    `ASSET_ISSUER=${'G'.padEnd(56, 'A')}`, 'EXPLORER_BASE_URL=https://explorer.example.test/other', 'BRIDGE_ACKNOWLEDGE_REAL_FUNDS=yes',
+  ];
+  function scratch(horizonUrl: string) {
+    const dir = mkdtempSync(join(tmpdir(), 'bridge-signer-order-'));
+    dirs.push(dir);
+    writeFileSync(join(dir, '.env'), `${[...networkLines(horizonUrl), `SPONSOR_PUBLIC_KEY=${SPONSOR.publicKey()}`, 'BRIDGE_SIGNER_MODULE=./fixtures/importing-signer.mjs'].join('\n')}\n`);
+    mkdirSync(join(dir, 'sdp'));
+    writeFileSync(join(dir, 'sdp', '.env'), `${networkLines(horizonUrl).join('\n')}\n`);
+    writeFileSync(join(dir, 'in.csv'), 'phone,id,amount\n+999700000001,r1,1\n');
+    mkdirSync(join(dir, 'fixtures'));
+    copyFileSync(join(repo, 'test', 'fixtures', 'importing-signer.mjs'), join(dir, 'fixtures', 'importing-signer.mjs'));
+    return dir;
+  }
+  /** A fake Horizon root in a child process (spawnSync would block the event loop an in-process server needs). */
+  async function fakeHorizon(passphrase: string): Promise<string> {
+    const code = `const s=require('node:http').createServer((q,r)=>{r.setHeader('content-type','application/json');r.end(JSON.stringify({network_passphrase:${JSON.stringify(passphrase)}}))});s.listen(0,'127.0.0.1',()=>process.stdout.write(String(s.address().port)+'\\n'));`;
+    const child = spawn(process.execPath, ['-e', code], { stdio: ['ignore', 'pipe', 'ignore'] });
+    children.push(child);
+    const port = await new Promise<string>((resolve) => child.stdout!.once('data', (d) => resolve(String(d).trim())));
+    return `http://127.0.0.1:${port}`;
+  }
+  const run = (dir: string) => new Promise<{ status: number | null; stderr: string }>((resolve) => {
+    const child = spawn(process.execPath, [join(repo, 'scripts', 'provision.mjs'), '--input', 'in.csv', '--output', 'out.csv', '--data', 'data'], {
+      cwd: dir, env: { PATH: process.env.PATH ?? '', FAKE_SIGNER_SPONSOR: Keypair.random().publicKey() }, stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr!.on('data', (d) => { stderr += String(d); });
+    child.on('close', (status) => resolve({ status, stderr }));
+  });
+
+  it('a Horizon that does not answer refuses the run and the signer module is never imported', async () => {
+    const dir = scratch('http://127.0.0.1:1');
+    const r = await run(dir);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('HORIZON_URL root did not answer');
+    expect(existsSync(join(dir, 'signer-module-imported.txt'))).toBe(false);
+  });
+
+  it('a Horizon that serves another passphrase refuses the run and the signer module is never imported', async () => {
+    const dir = scratch(await fakeHorizon('Test SDF Network ; September 2015'));
+    const r = await run(dir);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('HORIZON_URL serves a different network than NETWORK_PASSPHRASE names');
+    expect(existsSync(join(dir, 'signer-module-imported.txt'))).toBe(false);
+  });
+
+  it('a Horizon that confirms the passphrase lets the signer load, and its checks still run before any transaction', async () => {
+    const dir = scratch(await fakeHorizon(OTHER_PASSPHRASE));
+    const r = await run(dir);
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('cannot sign for the sponsor account');
     expect(existsSync(join(dir, 'signer-module-imported.txt'))).toBe(true);

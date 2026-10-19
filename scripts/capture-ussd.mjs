@@ -51,6 +51,10 @@ let env;
 try { env = { ...parseEnv(readFileSync('.env', 'utf8')), ...process.env }; } catch { console.error('.env not found'); process.exit(2); }
 let cfg;
 try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfigError || e instanceof ClosingLineError) { console.error(e.message); process.exit(2); } throw e; }
+// Live half of the boot assertion: Horizon's root must report the configured passphrase.
+// It runs before any signer module is loaded (fix round 3, 19 October 2026).
+// Ruling of 18 October 2026: when this fails, the readiness output names Horizon as the reason.
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(`NOT READY TO DIAL: Horizon check failed, the service does not start: ${e instanceof NetworkConfigError ? e.message : String(e)}`); process.exit(2); }
 // Creation on dial signs with the adapter's reference signer by default, or
 // with a signer injected through BRIDGE_SIGNER_MODULE (checked at boot).
 if (cfg.createOnDial) {
@@ -63,9 +67,6 @@ if (cfg.createOnDial) {
   } catch (e) { if (e instanceof SignerConfigError) { console.error(e.message); process.exit(2); } throw e; }
 }
 if (!cfg.callbackPath) { console.error('USSD_CALLBACK_PATH is not set in .env (a long random segment, never printed)'); process.exit(2); }
-// Live half of the boot assertion: Horizon's root must report the configured passphrase.
-// Ruling of 18 October 2026: when this fails, the readiness output names Horizon as the reason.
-try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(`NOT READY TO DIAL: Horizon check failed, the service does not start: ${e instanceof NetworkConfigError ? e.message : String(e)}`); process.exit(2); }
 let tunnelCfg;
 try { tunnelCfg = externalUrl ? { mode: 'external', hostname: normaliseHostname(externalUrl) } : tunnelConfigFromEnv(env); } catch (e) { console.error(e.message); process.exit(2); }
 
