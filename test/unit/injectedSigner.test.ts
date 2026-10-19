@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Keypair, TransactionBuilder } from '@stellar/stellar-sdk';
+import { Account, BASE_FEE, Keypair, Operation, TransactionBuilder } from '@stellar/stellar-sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LocalKeypairSigner } from 'stellar-ussd-sep10-adapter';
 import {
@@ -12,6 +12,7 @@ import {
   assertSigner,
   loadInjectedSigner,
   sponsorSigning,
+  envelopeHash,
   envelopeSignedBy,
   selfTestEnvelope,
   selfTestEnabled,
@@ -136,6 +137,23 @@ describe('sponsorSigning self-test: the signature is checked, not reported (revi
     await expect(sponsorSigning(env, unsigned, on)).rejects.toThrow(/does not verify against SPONSOR_PUBLIC_KEY/);
     const throwing = { ...signingWith(SPONSOR), async signTransaction() { throw new Error('hsm offline'); } };
     await expect(sponsorSigning(env, throwing, on)).rejects.toThrow(/failed to sign the self-test envelope: hsm offline/);
+  });
+
+  it('a signer that returns a different envelope, even one correctly signed by the sponsor, is refused on the hash before any signature is checked (fix round 3)', async () => {
+    const substituting = {
+      ...signingWith(SPONSOR),
+      async signTransaction(_xdr: string, opts: { networkPassphrase: string }) {
+        const other = new TransactionBuilder(new Account(SPONSOR.publicKey(), '-1'), { fee: BASE_FEE, networkPassphrase: opts.networkPassphrase })
+          .addOperation(Operation.manageData({ name: 'substituted', value: 'x' })).setTimebounds(0, 1).build();
+        other.sign(SPONSOR);
+        expect(envelopeSignedBy(other.toXDR(), SPONSOR.publicKey(), opts.networkPassphrase)).toBe(true);
+        return other.toXDR();
+      },
+    };
+    await expect(sponsorSigning(env, substituting, on)).rejects.toThrow(/returned a different envelope than the self-test sent it \(transaction hash mismatch\)/);
+    const sent = selfTestEnvelope(SPONSOR.publicKey(), PASSPHRASE);
+    const signedSame = await signingWith(SPONSOR).signTransaction(sent, { networkPassphrase: PASSPHRASE });
+    expect(envelopeHash(signedSame, PASSPHRASE)).toBe(envelopeHash(sent, PASSPHRASE));
   });
 
   it('off, the self-test is skipped and the signer is never asked to sign; the reference signer never self-tests', async () => {
