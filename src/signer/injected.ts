@@ -136,6 +136,11 @@ export function selfTestEnvelope(sponsorPublicKey: string, networkPassphrase: st
     .toXDR();
 }
 
+/** The transaction hash of an envelope, hex; what the self-test compares before it verifies a signature. */
+export function envelopeHash(xdr: string, networkPassphrase: string): string {
+  return TransactionBuilder.fromXDR(xdr, networkPassphrase).hash().toString('hex');
+}
+
 /** Whether the signed envelope carries a signature by `publicKey` over its own hash. */
 export function envelopeSignedBy(signedXdr: string, publicKey: string, networkPassphrase: string): boolean {
   const tx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
@@ -165,12 +170,20 @@ export async function sponsorSigning(env: EnvLike, injected?: Signer, opts: Spon
     let selfTested = false;
     if (opts.selfTest) {
       if (!opts.networkPassphrase) throw new SignerConfigError('the signer self-test needs the network passphrase');
+      const sent = selfTestEnvelope(publicKey, opts.networkPassphrase);
       let signed: string;
       try {
-        signed = await injected.signTransaction(selfTestEnvelope(publicKey, opts.networkPassphrase), { networkPassphrase: opts.networkPassphrase, accountId: publicKey });
+        signed = await injected.signTransaction(sent, { networkPassphrase: opts.networkPassphrase, accountId: publicKey });
       } catch (cause) {
         throw new SignerConfigError(`the injected signer reports it can sign for the sponsor but failed to sign the self-test envelope: ${(cause as Error).message}`);
       }
+      // The envelope that came back must be the envelope that was sent (same
+      // transaction hash) before its signature means anything: a signer that
+      // substitutes or rewrites the envelope would otherwise pass (review of
+      // 19 October, point 3).
+      let sameEnvelope = false;
+      try { sameEnvelope = envelopeHash(signed, opts.networkPassphrase) === envelopeHash(sent, opts.networkPassphrase); } catch { sameEnvelope = false; }
+      if (!sameEnvelope) throw new SignerConfigError('the injected signer returned a different envelope than the self-test sent it (transaction hash mismatch); the self-test proves nothing about such a signer');
       let verified = false;
       try { verified = envelopeSignedBy(signed, publicKey, opts.networkPassphrase); } catch { verified = false; }
       if (!verified) throw new SignerConfigError(`the injected signer reports it can sign for the sponsor account ${publicKey.slice(0, 4)}...${publicKey.slice(-4)} but its signature over the self-test envelope does not verify against SPONSOR_PUBLIC_KEY`);
