@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ConfigError, POSTGRES_VOLUME_ENV, dashboardUrlFor, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv } from '../../src/sdp/env.js';
+import { ConfigError, POSTGRES_VOLUME_ENV, composeEnvironment, dashboardUrlFor, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv } from '../../src/sdp/env.js';
 import { TESTNET_RPC_URL } from '../../src/sdp/facts.js';
 import { NetworkConfigError } from '../../src/sdp/network.js';
 
@@ -118,5 +118,25 @@ describe('the Postgres volume name is computed in one place, lower-cased (fix ro
     expect(nameLine).not.toContain('NETWORK_TYPE');
     expect(nameLine).not.toContain('postgres-db-');
     expect(readFileSync('sdp/.env.example', 'utf8')).toContain(`${POSTGRES_VOLUME_ENV}=`);
+  });
+});
+
+describe('composeEnvironment: compose runs with PATH, the asserted file and the volume name, nothing from the shell (fix round 3, 19 October)', () => {
+  const file = { COMPOSE_PROJECT_NAME: 'proj', NETWORK_TYPE: 'testnet', EMAIL_SENDER_TYPE: 'DRY_RUN', ADMIN_API_KEY: 'k' };
+  const shell = { PATH: '/usr/bin', HOME: '/Users/x', EMAIL_SENDER_TYPE: 'AWS_EMAIL', NETWORK_PASSPHRASE: 'Other Network ; Example Only', HORIZON_URL: 'https://horizon.example.test', NETWORK_TYPE: 'othernet', DOCKER_HOST: 'unix:///x' };
+
+  it('keeps PATH, every file value and the computed volume name, and drops everything the shell exported', () => {
+    const env = composeEnvironment(file, shell);
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.EMAIL_SENDER_TYPE).toBe('DRY_RUN');
+    expect(env.NETWORK_TYPE).toBe('testnet');
+    expect(env.ADMIN_API_KEY).toBe('k');
+    expect(env[POSTGRES_VOLUME_ENV]).toBe('proj_postgres-db-testnet');
+    for (const k of ['HOME', 'NETWORK_PASSPHRASE', 'HORIZON_URL', 'DOCKER_HOST']) expect(k in env).toBe(false);
+    expect(Object.keys(env).sort()).toEqual(['ADMIN_API_KEY', 'COMPOSE_PROJECT_NAME', 'EMAIL_SENDER_TYPE', 'NETWORK_TYPE', 'PATH', POSTGRES_VOLUME_ENV].sort());
+  });
+
+  it('refuses a written volume name that disagrees with the computed one, before any command runs', () => {
+    expect(() => composeEnvironment({ ...file, [POSTGRES_VOLUME_ENV]: 'proj_postgres-db-TestNet' }, shell)).toThrow(/SDP_POSTGRES_VOLUME in sdp\/.env does not equal/);
   });
 });

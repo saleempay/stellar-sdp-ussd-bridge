@@ -267,7 +267,14 @@ in one place, `postgresVolumeName`, lower-cased, written to `sdp/.env` as
 `sdp:up`, `sdp:down` and the `--force` guard, and read by the compose file
 from that variable, since Compose cannot lower-case), so `sdp/.env`
 switched to another network never brings the stack up on the testnet
-database and the guard always inspects the name the stack uses. Readiness step 8 (`usdc asset`) checks the configured issuer, the
+database and the guard always inspects the name the stack uses. Every
+compose and docker command the scripts run gets an explicit environment,
+`PATH` plus the asserted `sdp/.env` plus the computed volume name, nothing
+inherited from the shell (`composeEnvironment`): Compose gives shell
+variables precedence over `--env-file`, so an exported value would
+otherwise reach the containers while the assertion had approved the file.
+When you run compose by hand, as in section 5, do it from a shell that
+exports none of the SDP variables. Readiness step 8 (`usdc asset`) checks the configured issuer, the
 upload uses it to pick the asset, and explorer links are built from
 `EXPLORER_BASE_URL`.
 

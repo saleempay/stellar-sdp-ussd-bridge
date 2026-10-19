@@ -23,7 +23,7 @@ import {
   promptMfaCode,
   provisionTenant,
   readinessConfigFor,
-  resolvePostgresVolume,
+  composeEnvironment,
   sdpConfigFromEnv,
   verifyHorizonNetwork,
 } from '../dist/index.js';
@@ -43,8 +43,9 @@ let composeEnv;
 try {
   fileEnv = loadEnvFile(ENV_PATH);
   cfg = sdpConfigFromEnv(fileEnv);
-  // the volume name is computed in one place and handed to compose explicitly
-  composeEnv = { ...process.env, SDP_POSTGRES_VOLUME: resolvePostgresVolume(fileEnv) };
+  // compose runs with PATH, the asserted file and the computed volume name only:
+  // nothing exported in the shell can reach the containers unchecked
+  composeEnv = composeEnvironment(fileEnv);
 } catch (e) {
   fail(e instanceof ConfigError ? e.message : String(e), 2);
 }

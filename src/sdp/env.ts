@@ -107,6 +107,23 @@ export function resolvePostgresVolume(env: EnvMap): string {
   return computed;
 }
 
+/**
+ * The environment every compose and docker command runs with: PATH, the
+ * asserted sdp/.env and the computed volume name, nothing inherited from
+ * the shell (fix round 3, 19 October 2026). Compose gives shell variables
+ * precedence over --env-file, so an exported EMAIL_SENDER_TYPE,
+ * NETWORK_PASSPHRASE, HORIZON_URL, RPC_URL or NETWORK_TYPE would otherwise
+ * reach the containers while the assertion had approved the file. Building
+ * the child environment from the file alone makes the checked values and
+ * the running values the same by construction.
+ */
+export function composeEnvironment(fileEnv: EnvMap, base: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = { PATH: base.PATH ?? '' };
+  for (const [k, v] of Object.entries(fileEnv)) if (v !== undefined) out[k] = v;
+  out[POSTGRES_VOLUME_ENV] = resolvePostgresVolume(fileEnv);
+  return out;
+}
+
 /** The dry run sender writes every message to the container log (internal/message/dry_run_client.go:17-21 at 7.0.0). */
 export const DRY_RUN_SENDER = 'DRY_RUN';
 

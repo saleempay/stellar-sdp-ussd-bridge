@@ -26,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes, randomInt, generateKeyPairSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { NetworkConfigError, assertNetwork, explorerAccountUrl, explorerTxUrl, postgresVolumeName as volumeNameFor, resolvePostgresVolume } from '../dist/index.js';
+import { NetworkConfigError, assertNetwork, composeEnvironment, explorerAccountUrl, explorerTxUrl, postgresVolumeName as volumeNameFor, resolvePostgresVolume } from '../dist/index.js';
 
 const ENV_PATH = 'sdp/.env';
 const TEMPLATE_PATH = 'sdp/.env.example';
@@ -59,7 +59,8 @@ if (force) {
   // Exit 0 means it exists. A stopped daemon or a missing binary also exits
   // non-zero, so only Docker's own "no such volume" answer counts as absent;
   // anything else refuses, because the volume may well still be on disk.
-  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { encoding: 'utf8' });
+  // docker runs with PATH and the file only, like compose (fix round 3)
+  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { encoding: 'utf8', env: existsSync(ENV_PATH) ? composeEnvironment(parseEnv(readFileSync(ENV_PATH, 'utf8'))) : { PATH: process.env.PATH ?? '' } });
   if (inspect.status === 0) {
     console.error(`--force refused: the Docker volume ${volume} still exists. Its tenant distribution keys are encrypted under the passphrases in the current ${ENV_PATH}; new passphrases would leave every tenant unable to sign. Run \`npm run sdp:down -- --reset\` first, then re-run with --force.`);
     process.exit(2);
