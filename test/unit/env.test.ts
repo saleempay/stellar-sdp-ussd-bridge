@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, dashboardUrlFor, postgresVolumeName, readinessConfigFor, sdpConfigFromEnv } from '../../src/sdp/env.js';
+import { readFileSync } from 'node:fs';
+import { ConfigError, POSTGRES_VOLUME_ENV, dashboardUrlFor, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv } from '../../src/sdp/env.js';
 import { TESTNET_RPC_URL } from '../../src/sdp/facts.js';
 import { NetworkConfigError } from '../../src/sdp/network.js';
 
@@ -92,10 +93,30 @@ describe('sdpConfigFromEnv: RPC_URL is a network value too (fix round of 18 Octo
   });
 });
 
-describe('postgresVolumeName: the network type is part of the volume name (fix round of 18 October)', () => {
-  it('matches the compose expression with its defaults and with values set', () => {
+describe('the Postgres volume name is computed in one place, lower-cased (fix rounds of 18 and 19 October)', () => {
+  it('both spellings of the network type give the same name, with the defaults and with values set', () => {
     expect(postgresVolumeName(undefined, undefined)).toBe('sdp-bridge_postgres-db-testnet');
     expect(postgresVolumeName('', '')).toBe('sdp-bridge_postgres-db-testnet');
     expect(postgresVolumeName('proj', 'OtherNet')).toBe('proj_postgres-db-othernet');
+    expect(postgresVolumeName('proj', 'othernet')).toBe(postgresVolumeName('proj', ' OtherNet '));
+    expect(postgresVolumeName('proj', 'Public')).toBe(postgresVolumeName('proj', 'public'));
+  });
+
+  it('resolvePostgresVolume returns the computed name, accepts a written copy that matches, and refuses one that differs in any way, case included', () => {
+    expect(resolvePostgresVolume({ COMPOSE_PROJECT_NAME: 'proj', NETWORK_TYPE: 'TestNet' })).toBe('proj_postgres-db-testnet');
+    expect(resolvePostgresVolume({ NETWORK_TYPE: 'testnet', [POSTGRES_VOLUME_ENV]: 'sdp-bridge_postgres-db-testnet' })).toBe('sdp-bridge_postgres-db-testnet');
+    for (const written of ['sdp-bridge_postgres-db-TestNet', 'other_postgres-db-testnet', 'sdp-bridge_postgres-db-public']) {
+      const err = (() => { try { resolvePostgresVolume({ NETWORK_TYPE: 'TestNet', [POSTGRES_VOLUME_ENV]: written }); } catch (e) { return e as Error; } return undefined; })();
+      expect(err?.message).toContain(`${POSTGRES_VOLUME_ENV} in sdp/.env does not equal the name computed`);
+    }
+  });
+
+  it('the compose file reads the name from that variable and never builds it from NETWORK_TYPE', () => {
+    const compose = readFileSync('sdp/docker-compose.yml', 'utf8');
+    const nameLine = compose.split('\n').find((l) => /^\s+name:\s*\$\{/.test(l)) ?? '';
+    expect(nameLine).toContain(`\${${POSTGRES_VOLUME_ENV}:?`);
+    expect(nameLine).not.toContain('NETWORK_TYPE');
+    expect(nameLine).not.toContain('postgres-db-');
+    expect(readFileSync('sdp/.env.example', 'utf8')).toContain(`${POSTGRES_VOLUME_ENV}=`);
   });
 });

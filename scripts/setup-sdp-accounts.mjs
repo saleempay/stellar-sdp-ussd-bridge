@@ -26,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes, randomInt, generateKeyPairSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { NetworkConfigError, assertNetwork, explorerAccountUrl, explorerTxUrl, postgresVolumeName as volumeNameFor } from '../dist/index.js';
+import { NetworkConfigError, assertNetwork, explorerAccountUrl, explorerTxUrl, postgresVolumeName as volumeNameFor, resolvePostgresVolume } from '../dist/index.js';
 
 const ENV_PATH = 'sdp/.env';
 const TEMPLATE_PATH = 'sdp/.env.example';
@@ -46,12 +46,11 @@ if (existsSync(ENV_PATH) && !force) {
  * the environment, then the defaults (src/sdp/env.ts, postgresVolumeName).
  */
 function postgresVolumeName() {
-  const fromFile = (key) => {
-    if (!existsSync(ENV_PATH)) return undefined;
-    const m = new RegExp(`^${key}=(.*)$`, 'm').exec(readFileSync(ENV_PATH, 'utf8'));
-    return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined;
-  };
-  return volumeNameFor(fromFile('COMPOSE_PROJECT_NAME') || process.env.COMPOSE_PROJECT_NAME, fromFile('NETWORK_TYPE') || process.env.NETWORK_TYPE);
+  if (existsSync(ENV_PATH)) {
+    // the existing file decides, and its written name must agree with the computed one
+    return resolvePostgresVolume(parseEnv(readFileSync(ENV_PATH, 'utf8')));
+  }
+  return volumeNameFor(process.env.COMPOSE_PROJECT_NAME, process.env.NETWORK_TYPE);
 }
 
 if (force) {
@@ -125,6 +124,8 @@ const values = {
   EC256_PRIVATE_KEY: `"${ecPem}"`,
   BRIDGE_OWNER_PASSWORD: password(),
   SCOPETEST_OWNER_PASSWORD: password(),
+  // the volume name, computed once here and read by the compose file
+  SDP_POSTGRES_VOLUME: volumeNameFor(parseEnv(template).COMPOSE_PROJECT_NAME || process.env.COMPOSE_PROJECT_NAME, network.networkType),
 };
 
 // The template is validated before Friendbot is asked for anything: a

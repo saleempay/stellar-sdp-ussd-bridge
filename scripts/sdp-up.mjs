@@ -23,6 +23,7 @@ import {
   promptMfaCode,
   provisionTenant,
   readinessConfigFor,
+  resolvePostgresVolume,
   sdpConfigFromEnv,
   verifyHorizonNetwork,
 } from '../dist/index.js';
@@ -37,8 +38,13 @@ function fail(message, code = 1) {
 }
 
 let cfg;
+let fileEnv;
+let composeEnv;
 try {
-  cfg = sdpConfigFromEnv(loadEnvFile(ENV_PATH));
+  fileEnv = loadEnvFile(ENV_PATH);
+  cfg = sdpConfigFromEnv(fileEnv);
+  // the volume name is computed in one place and handed to compose explicitly
+  composeEnv = { ...process.env, SDP_POSTGRES_VOLUME: resolvePostgresVolume(fileEnv) };
 } catch (e) {
   fail(e instanceof ConfigError ? e.message : String(e), 2);
 }
@@ -48,7 +54,7 @@ try { await verifyHorizonNetwork(cfg.network); } catch (e) { fail(e.message, 2);
 
 if (!checkOnly) {
   console.log('docker compose up -d ...');
-  const up = spawnSync('docker', [...COMPOSE, 'up', '-d'], { stdio: 'inherit' });
+  const up = spawnSync('docker', [...COMPOSE, 'up', '-d'], { stdio: 'inherit', env: composeEnv });
   if (up.status !== 0) fail(`docker compose up exited with ${up.status ?? 'signal'}`);
 }
 
@@ -69,7 +75,7 @@ const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenant
 function scanLog(args, match) {
   return new Promise((resolve, reject) => {
     const scanner = new ResetTokenScanner(match);
-    const child = spawn('docker', [...COMPOSE, 'logs', '--no-color', '--no-log-prefix', ...args, 'sdp-api'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const child = spawn('docker', [...COMPOSE, 'logs', '--no-color', '--no-log-prefix', ...args, 'sdp-api'], { stdio: ['ignore', 'pipe', 'ignore'], env: composeEnv });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk) => scanner.push(chunk));
     child.on('error', reject);

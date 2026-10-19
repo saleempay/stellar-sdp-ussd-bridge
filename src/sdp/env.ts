@@ -86,6 +86,27 @@ export function postgresVolumeName(project: string | undefined, networkType: str
   return `${p}_postgres-db-${n}`;
 }
 
+/** The variable the compose file reads the volume name from; written to sdp/.env by sdp:accounts, checked by every script. */
+export const POSTGRES_VOLUME_ENV = 'SDP_POSTGRES_VOLUME';
+
+/**
+ * The one place the volume name is decided (fix round 3, 19 October 2026).
+ * Compose cannot lower-case, so it no longer interpolates NETWORK_TYPE into
+ * the name: it reads SDP_POSTGRES_VOLUME, which sdp:accounts writes from
+ * postgresVolumeName and which this function recomputes and checks before
+ * any compose or docker command, so the name the stack uses, the name the
+ * --force guard inspects and the name in the file are always the same
+ * string, whatever the spelling of NETWORK_TYPE.
+ */
+export function resolvePostgresVolume(env: EnvMap): string {
+  const computed = postgresVolumeName(env.COMPOSE_PROJECT_NAME, env.NETWORK_TYPE);
+  const written = (env[POSTGRES_VOLUME_ENV] ?? '').trim();
+  if (written && written !== computed) {
+    throw new NetworkConfigError([`${POSTGRES_VOLUME_ENV} in sdp/.env does not equal the name computed from COMPOSE_PROJECT_NAME and NETWORK_TYPE; re-run sdp:accounts or correct the file`]);
+  }
+  return computed;
+}
+
 /** The dry run sender writes every message to the container log (internal/message/dry_run_client.go:17-21 at 7.0.0). */
 export const DRY_RUN_SENDER = 'DRY_RUN';
 

@@ -142,6 +142,27 @@ describe('setup-sdp-accounts.mjs --no-fund', () => {
     expect(existsSync(join(dir, 'sdp', '.env'))).toBe(false);
   });
 
+  it('writes SDP_POSTGRES_VOLUME lower-cased for either spelling of the network type (fix round 3, 19 October)', () => {
+    for (const spelling of ['othernet', 'OtherNet']) {
+      const dir = scratch();
+      const r = run('setup-sdp-accounts.mjs', dir, ['--no-fund'], {
+        NETWORK_TYPE: spelling,
+        NETWORK_PASSPHRASE: 'Other Network ; Example Only',
+        HORIZON_URL: 'https://horizon.example.test',
+        ASSET_ISSUER: 'G'.padEnd(56, 'A'),
+        EXPLORER_BASE_URL: 'https://explorer.example.test/other',
+        BRIDGE_ACKNOWLEDGE_REAL_FUNDS: 'yes',
+        RPC_URL: 'https://rpc.example.test',
+        EMAIL_SENDER_TYPE: 'AWS_EMAIL',
+      });
+      expect(r.status, r.err).toBe(0);
+      expect(readFileSync(join(dir, 'sdp', '.env'), 'utf8')).toContain('SDP_POSTGRES_VOLUME=sdp-bridge_postgres-db-othernet\n');
+    }
+    const dir = scratch();
+    expect(run('setup-sdp-accounts.mjs', dir, ['--no-fund']).status).toBe(0);
+    expect(readFileSync(join(dir, 'sdp', '.env'), 'utf8')).toContain('SDP_POSTGRES_VOLUME=sdp-bridge_postgres-db-testnet\n');
+  });
+
   it('on another network without --no-fund the faucet is never called: funding is skipped with a note (review of 13 October, minor)', () => {
     const dir = scratch();
     const r = run('setup-sdp-accounts.mjs', dir, [], { ...{

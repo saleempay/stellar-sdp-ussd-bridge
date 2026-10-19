@@ -261,8 +261,13 @@ cannot be used by omission); `provision` and `sdp:upload` compare `.env`
 with `sdp/.env` (`assertSameNetwork`: type, passphrase, Horizon and
 issuer must match; off testnet both files are required, on testnet a
 missing one is noted); and the Postgres volume is named
-`<project>_postgres-db-<network type>`, so `sdp/.env` switched to another
-network never brings the stack up on the testnet database. Readiness step 8 (`usdc asset`) checks the configured issuer, the
+`<project>_postgres-db-<network type>` (fix round 3, 19 October: computed
+in one place, `postgresVolumeName`, lower-cased, written to `sdp/.env` as
+`SDP_POSTGRES_VOLUME` by `sdp:accounts`, recomputed and checked by
+`sdp:up`, `sdp:down` and the `--force` guard, and read by the compose file
+from that variable, since Compose cannot lower-case), so `sdp/.env`
+switched to another network never brings the stack up on the testnet
+database and the guard always inspects the name the stack uses. Readiness step 8 (`usdc asset`) checks the configured issuer, the
 upload uses it to pick the asset, and explorer links are built from
 `EXPLORER_BASE_URL`.
 

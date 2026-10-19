@@ -145,6 +145,10 @@ services:
 
 volumes:
   postgres-db:
-    # The network type is part of the name: sdp/.env switched to another
-    # network never reuses the testnet database (src/sdp/env.ts, postgresVolumeName).
-    name: ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-${NETWORK_TYPE:-testnet}
+    # The name is computed in one place, src/sdp/env.ts postgresVolumeName
+    # (<project>_postgres-db-<network type, lower-cased>), written to sdp/.env
+    # by sdp:accounts as SDP_POSTGRES_VOLUME and checked by every script
+    # before compose runs; Compose itself cannot lower-case, so it never
+    # builds the name. A network switch in sdp/.env never reuses the testnet
+    # database.
+    name: ${SDP_POSTGRES_VOLUME:?set in sdp/.env by sdp:accounts}
