@@ -100,14 +100,23 @@ try {
   process.exit(2);
 }
 
+// Live half of the boot assertion: Horizon's root must report the configured
+// passphrase. It runs before the signer is loaded (fix round 3, 19 October
+// 2026): "the network is accepted" means both halves, so a Horizon that
+// serves another network refuses the run before the deployment's module is
+// imported, its factory run or anything signed.
+// Live half of the boot assertion: Horizon's root must report the configured passphrase.
+try { await verifyHorizonNetwork(network, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+
 // The signer comes last among the boot checks: the adapter's reference
 // signer over SPONSOR_SECRET_KEY by default, or one injected through
 // BRIDGE_SIGNER_MODULE (checked against the adapter's Signer interface;
 // SPONSOR_PUBLIC_KEY names the sponsor). A deployment's signer module is
 // the code that reaches out at import or construction (an HSM session, an
-// MPC service), so it is imported only after the network has been accepted,
-// the real-funds acknowledgement checked and the caps read (review of
-// 13 October, pull request #10, finding 2).
+// MPC service), so it is imported only after the network has been accepted
+// by both halves of the assertion, the real-funds acknowledgement checked
+// and the caps read (review of 13 October, pull request #10, finding 2;
+// completed in fix round 3).
 let signing;
 try {
   const selfTest = selfTestEnabled(env, network.networkType);
@@ -132,8 +141,6 @@ const deps = {
   paymentIdPrefix: basename(input).replace(/\.csv$/i, ''),
 };
 
-// Live half of the boot assertion: Horizon's root must report the configured passphrase.
-try { await verifyHorizonNetwork(network, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
 console.log(`network ${network.networkType} (Horizon root confirms the passphrase), signer ${signing.injected ? 'injected' : 'adapter reference'}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows within caps ${caps.maxPaymentUsdc}/${caps.maxBatchUsdc} USDC, data in ${dataDir}/`);
 let report;
 try {
