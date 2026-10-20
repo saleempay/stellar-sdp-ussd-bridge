@@ -51,6 +51,8 @@ export interface ReadinessConfig {
   uiUrlFor: (tenantName: string) => string;
   adminAccount: string;
   adminApiKey: string;
+  /** Distribution account type for the tenant (DISTRIBUTION_ACCOUNT_DB_VAULT when absent); an existing tenant of another type is refused. */
+  tenantAccountType?: string;
   tenant: TenantSpec;
   /** The USDC issuer the tenant must carry: the configured network's issuer (env.ts passes it). Defaults to the testnet issuer. */
   usdcIssuer?: string;
@@ -161,14 +163,24 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
     results.push({ step: 'admin health', outcome: 'ok', detail: `answered 200 after ${ms} ms` });
   });
 
-  // 3: the tenant exists, with its own distribution account in the DB vault.
-  // An existing tenant passes only in a usable status and with a
-  // distribution account address; a deactivated tenant or one without an
-  // account would report ready and then fail at the first payment.
+  // 3: the tenant exists, with the configured distribution account type: its
+  // own account in the DB vault, or the host account under ENV (the SDP
+  // skips the bootstrap funding and adds the trustlines to the host account,
+  // stellar-multitenant/internal/provisioning/manager.go:168-172,224-226).
+  // An existing tenant passes only in a usable status, with a distribution
+  // account address, and with the configured type: the SDP cannot change the
+  // type after creation, so a mismatch is a configuration error, not a step
+  // to perform.
+  const accountType = cfg.tenantAccountType ?? DISTRIBUTION_ACCOUNT_DB_VAULT;
   const tenant = await run('tenant exists', async () => {
     const existing = await deps.admin.getTenant(spec.name);
     if (existing) {
       assertTenantUsable(existing);
+      if (existing.distribution_account_type !== accountType) {
+        throw new Error(
+          `tenant ${existing.name} id ${existing.id} has distribution account type ${existing.distribution_account_type}, but SDP_TENANT_ACCOUNT_TYPE asks for ${accountType}; the SDP cannot change the type of an existing tenant, so set the variable to the existing type or reset the stack`,
+        );
+      }
       results.push({
         step: 'tenant exists',
         outcome: 'already',
@@ -182,7 +194,7 @@ export async function provisionTenant(cfg: ReadinessConfig, deps: ReadinessDeps)
       owner_first_name: 'Tenant',
       owner_last_name: 'Owner',
       organization_name: spec.organizationName,
-      distribution_account_type: DISTRIBUTION_ACCOUNT_DB_VAULT,
+      distribution_account_type: accountType,
       base_url: cfg.apiUrl,
       sdp_ui_base_url: cfg.uiUrlFor(spec.name),
     });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ConfigError, DOCKER_CLIENT_ENV, POSTGRES_VOLUME_ENV, composeEnvironment, dashboardUrlFor, dockerClientEnvironment, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv } from '../../src/sdp/env.js';
+import { ConfigError, DOCKER_CLIENT_ENV, POSTGRES_VOLUME_ENV, composeEnvironment, dashboardUrlFor, dockerClientEnvironment, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv, tenantAccountTypeFrom } from '../../src/sdp/env.js';
 import { TESTNET_RPC_URL } from '../../src/sdp/facts.js';
 import { NetworkConfigError } from '../../src/sdp/network.js';
 
@@ -184,5 +184,28 @@ describe('sdpConfigFromEnv: ENVIRONMENT and CORS_ALLOWED_ORIGINS off testnet (fi
     const err = refusal({ ...base, EMAIL_SENDER_TYPE: 'DRY_RUN', ENVIRONMENT: 'localhost', CORS_ALLOWED_ORIGINS: '*' });
     expect(err.reasons).toHaveLength(3);
     expect(err.reasons.map((r) => r.split(' ')[0])).toEqual(['EMAIL_SENDER_TYPE', 'ENVIRONMENT', 'CORS_ALLOWED_ORIGINS']);
+  });
+});
+
+describe('SDP_TENANT_ACCOUNT_TYPE', () => {
+  it('unset or blank is the DB vault; short and full names, any case, map to the SDP names', () => {
+    expect(tenantAccountTypeFrom({})).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+    expect(tenantAccountTypeFrom({ SDP_TENANT_ACCOUNT_TYPE: '  ' })).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+    expect(tenantAccountTypeFrom({ SDP_TENANT_ACCOUNT_TYPE: 'db_vault' })).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+    expect(tenantAccountTypeFrom({ SDP_TENANT_ACCOUNT_TYPE: 'ENV' })).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    expect(tenantAccountTypeFrom({ SDP_TENANT_ACCOUNT_TYPE: ' env ' })).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    expect(tenantAccountTypeFrom({ SDP_TENANT_ACCOUNT_TYPE: 'DISTRIBUTION_ACCOUNT.STELLAR.ENV' })).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+  });
+
+  it('any other value is refused naming the variable and the accepted names', () => {
+    expect(() => tenantAccountTypeFrom({ SDP_TENANT_ACCOUNT_TYPE: 'CIRCLE' })).toThrow(ConfigError);
+    expect(() => tenantAccountTypeFrom({ SDP_TENANT_ACCOUNT_TYPE: 'CIRCLE' })).toThrow(/SDP_TENANT_ACCOUNT_TYPE must be DB_VAULT or ENV/);
+  });
+
+  it('is read into the config and threaded into the readiness config of every tenant', () => {
+    const cfg = sdpConfigFromEnv({ ...full, SDP_TENANT_ACCOUNT_TYPE: 'ENV' });
+    expect(cfg.tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    for (const t of cfg.tenants) expect(readinessConfigFor(cfg, t).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    expect(sdpConfigFromEnv(full).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
   });
 });
