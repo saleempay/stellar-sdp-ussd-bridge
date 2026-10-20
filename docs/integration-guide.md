@@ -290,18 +290,27 @@ Seeding the account store from a run made elsewhere, step by step:
    their first dial. If a `pins.json` exists from an earlier run of the
    same numbers, keep it only if those recipients are the same people.
 
-Health: the adapter's listener answers only the callback path; a load
-balancer health check that needs an HTTP 200 does not get one from another
-path, so use a TCP check on `USSD_PORT`, or a check that POSTs a
-well-formed gateway callback (the readiness probe in `ussd:capture` does
-exactly that against the public URL).
+The entrypoint of a long-running deployment is `npm run ussd:serve`
+(`scripts/ussd-serve.mjs`, after `npm run build`): the listener on
+`USSD_PORT`, one log line per event on stdout, a clean stop on SIGTERM, no
+tunnel, no recorder, no timer. It reads `.env` when present, overlaid by
+the process environment, runs the boot assertion, then the live Horizon
+check before any signer is loaded: a Horizon that serves another network
+stops the start with exit code 2; a Horizon that does not answer lets the
+service start and readiness reports the failure until a later check
+passes (every `USSD_READY_RECHECK_MS`, default 60 seconds).
 
-This repository ships the sandbox recorder, `npm run ussd:capture`, which
-starts a tunnel, records every request and stops after `--wait-minutes`;
-it is not the entrypoint of a long-running deployment. A deployment runs
-the listener from `createUssdServer(ussdConfigFromEnv(env))` (exported by
-the package) in its own entrypoint, without the tunnel and without the
-recorder.
+Readiness: `GET` on `USSD_READY_PATH` (default `/ready`) answers 200 with
+`{"ready":true}` while the last Horizon check passed and 503 with
+`{"ready":false,"reason":...}` otherwise; the body also names the network
+type, the time of the last check, and whether creation on dial and a
+signer are on; it never carries the callback path or a secret. Point the
+load balancer's health check at it. Every other request goes to the
+adapter's listener, which answers only the callback path.
+
+`npm run ussd:capture` remains the sandbox recorder: it starts a tunnel,
+records every request and stops after `--wait-minutes`; it is not a
+deployment entrypoint.
 
 ### The account screen
 
