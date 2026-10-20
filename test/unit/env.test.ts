@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ConfigError, POSTGRES_VOLUME_ENV, composeEnvironment, dashboardUrlFor, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv } from '../../src/sdp/env.js';
+import { ConfigError, DOCKER_CLIENT_ENV, POSTGRES_VOLUME_ENV, composeEnvironment, dashboardUrlFor, dockerClientEnvironment, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv } from '../../src/sdp/env.js';
 import { TESTNET_RPC_URL } from '../../src/sdp/facts.js';
 import { NetworkConfigError } from '../../src/sdp/network.js';
 
@@ -126,15 +126,31 @@ describe('composeEnvironment: compose runs with PATH, the asserted file and the 
   const file = { COMPOSE_PROJECT_NAME: 'proj', NETWORK_TYPE: 'testnet', EMAIL_SENDER_TYPE: 'DRY_RUN', ADMIN_API_KEY: 'k' };
   const shell = { PATH: '/usr/bin', HOME: '/Users/x', EMAIL_SENDER_TYPE: 'AWS_EMAIL', NETWORK_PASSPHRASE: 'Other Network ; Example Only', HORIZON_URL: 'https://horizon.example.test', NETWORK_TYPE: 'othernet', DOCKER_HOST: 'unix:///x' };
 
-  it('keeps PATH, every file value and the computed volume name, and drops everything the shell exported', () => {
+  it('keeps PATH, the Docker client variables, every file value and the computed volume name, and drops every SDP value the shell exported', () => {
     const env = composeEnvironment(file, shell);
     expect(env.PATH).toBe('/usr/bin');
+    expect(env.HOME).toBe('/Users/x');
+    expect(env.DOCKER_HOST).toBe('unix:///x');
     expect(env.EMAIL_SENDER_TYPE).toBe('DRY_RUN');
     expect(env.NETWORK_TYPE).toBe('testnet');
     expect(env.ADMIN_API_KEY).toBe('k');
     expect(env[POSTGRES_VOLUME_ENV]).toBe('proj_postgres-db-testnet');
-    for (const k of ['HOME', 'NETWORK_PASSPHRASE', 'HORIZON_URL', 'DOCKER_HOST']) expect(k in env).toBe(false);
-    expect(Object.keys(env).sort()).toEqual(['ADMIN_API_KEY', 'COMPOSE_PROJECT_NAME', 'EMAIL_SENDER_TYPE', 'NETWORK_TYPE', 'PATH', POSTGRES_VOLUME_ENV].sort());
+    for (const k of ['NETWORK_PASSPHRASE', 'HORIZON_URL']) expect(k in env).toBe(false);
+    expect(Object.keys(env).sort()).toEqual(['ADMIN_API_KEY', 'COMPOSE_PROJECT_NAME', 'DOCKER_HOST', 'EMAIL_SENDER_TYPE', 'HOME', 'NETWORK_TYPE', 'PATH', POSTGRES_VOLUME_ENV].sort());
+  });
+
+  it('keeps each of the Docker client variables only when the shell sets it, so the selected engine stays the engine the scripts talk to (review of 19 October)', () => {
+    const all: Record<string, string> = { PATH: '/usr/bin' };
+    for (const k of DOCKER_CLIENT_ENV) all[k] = `value-of-${k}`;
+    const kept = dockerClientEnvironment({ ...all, NETWORK_TYPE: 'othernet', EMAIL_SENDER_TYPE: 'DRY_RUN', RANDOM_SHELL_VAR: 'x' });
+    expect(Object.keys(kept).sort()).toEqual(['PATH', ...DOCKER_CLIENT_ENV].sort());
+    for (const k of DOCKER_CLIENT_ENV) expect(kept[k]).toBe(`value-of-${k}`);
+    expect(dockerClientEnvironment({ PATH: '/usr/bin', DOCKER_HOST: '' })).toEqual({ PATH: '/usr/bin' });
+    expect(DOCKER_CLIENT_ENV).toEqual(['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'DOCKER_CERT_PATH', 'DOCKER_TLS_VERIFY', 'HOME', 'XDG_RUNTIME_DIR']);
+    // the file still wins over the shell for any SDP key, and the shell's SDP keys never pass through
+    const env = composeEnvironment({ NETWORK_TYPE: 'testnet' }, { ...all, NETWORK_TYPE: 'othernet' });
+    expect(env.NETWORK_TYPE).toBe('testnet');
+    expect(env.DOCKER_CONTEXT).toBe('value-of-DOCKER_CONTEXT');
   });
 
   it('refuses a written volume name that disagrees with the computed one, before any command runs', () => {

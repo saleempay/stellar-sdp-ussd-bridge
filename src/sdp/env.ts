@@ -108,17 +108,36 @@ export function resolvePostgresVolume(env: EnvMap): string {
 }
 
 /**
- * The environment every compose and docker command runs with: PATH, the
- * asserted sdp/.env and the computed volume name, nothing inherited from
- * the shell (fix round 3, 19 October 2026). Compose gives shell variables
- * precedence over --env-file, so an exported EMAIL_SENDER_TYPE,
- * NETWORK_PASSPHRASE, HORIZON_URL, RPC_URL or NETWORK_TYPE would otherwise
- * reach the containers while the assertion had approved the file. Building
- * the child environment from the file alone makes the checked values and
- * the running values the same by construction.
+ * The variables that tell the docker CLI which engine to talk to and where
+ * its configuration lives. They are not SDP configuration, so the shell
+ * keeps them (review of 19 October, verification of fix round 3): without
+ * them a machine that selects its engine through DOCKER_HOST or
+ * DOCKER_CONTEXT would have the scripts talk to the default daemon, and the
+ * --force guard would inspect the wrong engine's volumes.
+ */
+export const DOCKER_CLIENT_ENV = Object.freeze(['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'DOCKER_CERT_PATH', 'DOCKER_TLS_VERIFY', 'HOME', 'XDG_RUNTIME_DIR']);
+
+/** PATH plus the Docker client's own variables, when set in the shell; nothing else. */
+export function dockerClientEnvironment(base: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = { PATH: base.PATH ?? '' };
+  for (const k of DOCKER_CLIENT_ENV) if (base[k] !== undefined && base[k] !== '') out[k] = base[k] as string;
+  return out;
+}
+
+/**
+ * The environment every compose and docker command runs with: PATH and the
+ * Docker client's own variables from the shell, then the asserted sdp/.env,
+ * then the computed volume name; no SDP value is inherited from the shell
+ * (fix round 3, 19 October 2026). Compose gives shell variables precedence
+ * over --env-file, so an exported EMAIL_SENDER_TYPE, NETWORK_PASSPHRASE,
+ * HORIZON_URL, RPC_URL or NETWORK_TYPE would otherwise reach the containers
+ * while the assertion had approved the file. Building the SDP part of the
+ * child environment from the file alone makes the checked values and the
+ * running values the same by construction, and keeping the client's own
+ * variables keeps the engine the operator selected.
  */
 export function composeEnvironment(fileEnv: EnvMap, base: Record<string, string | undefined> = process.env): Record<string, string> {
-  const out: Record<string, string> = { PATH: base.PATH ?? '' };
+  const out = dockerClientEnvironment(base);
   for (const [k, v] of Object.entries(fileEnv)) if (v !== undefined) out[k] = v;
   out[POSTGRES_VOLUME_ENV] = resolvePostgresVolume(fileEnv);
   return out;
