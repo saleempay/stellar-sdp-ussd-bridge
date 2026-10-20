@@ -5,11 +5,14 @@ import { TESTNET_USDC_ISSUER } from '../../src/sdp/facts.js';
 import { fakeFetch, type Recorded } from './helpers.js';
 
 /** An in-memory SDP: enough state to exercise every readiness step. */
-function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; tenantStatus?: string; noDistributionAccount?: boolean; isDefault?: boolean; invitationsOff?: boolean; walletEnabled?: boolean; usdcIssuer?: string; noUserManaged?: boolean; otherUserManagedName?: string; mfaDisabled?: boolean | null; strictMfa?: boolean } = {}) {
+/** The host distribution account the fake SDP assigns to an ENV tenant (the SDP uses DISTRIBUTION_PUBLIC_KEY). */
+const HOST_ACCOUNT = 'GHOST567ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQ';
+
+function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; tenantStatus?: string; noDistributionAccount?: boolean; isDefault?: boolean; invitationsOff?: boolean; walletEnabled?: boolean; usdcIssuer?: string; noUserManaged?: boolean; otherUserManagedName?: string; mfaDisabled?: boolean | null; strictMfa?: boolean; tenantAccountType?: string } = {}) {
   const state = {
     apiHealthCallsLeft: opts.apiDown ?? 0,
     tenant: opts.tenantExists
-      ? ({ id: 't1', name: 'bridge', status: opts.tenantStatus ?? 'TENANT_ACTIVATED', is_default: opts.isDefault ?? false, base_url: null, sdp_ui_base_url: null, distribution_account_address: opts.noDistributionAccount ? null : 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW', distribution_account_type: 'DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT', distribution_account_status: 'ACTIVE' } as Tenant)
+      ? ({ id: 't1', name: 'bridge', status: opts.tenantStatus ?? 'TENANT_ACTIVATED', is_default: opts.isDefault ?? false, base_url: null, sdp_ui_base_url: null, distribution_account_address: opts.noDistributionAccount ? null : 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW', distribution_account_type: opts.tenantAccountType ?? 'DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT', distribution_account_status: 'ACTIVE' } as Tenant)
       : null,
     invitationsOff: opts.invitationsOff ?? false,
     walletEnabled: opts.walletEnabled ?? false,
@@ -31,7 +34,7 @@ function fakeSdp(opts: { apiDown?: number; tenantExists?: boolean; tenantStatus?
     if (p === '/tenants/bridge') return state.tenant ? { status: 200, body: state.tenant } : { status: 404, body: { error: 'nf' } };
     if (p === '/tenants' && r.method === 'POST') {
       const body = JSON.parse(r.body!);
-      state.tenant = { id: 't-new', name: body.name, status: 'TENANT_PROVISIONED', is_default: false, base_url: body.base_url, sdp_ui_base_url: body.sdp_ui_base_url, distribution_account_address: 'GNEW4567ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQ', distribution_account_type: body.distribution_account_type, distribution_account_status: 'ACTIVE' };
+      state.tenant = { id: 't-new', name: body.name, status: 'TENANT_PROVISIONED', is_default: false, base_url: body.base_url, sdp_ui_base_url: body.sdp_ui_base_url, distribution_account_address: body.distribution_account_type === 'DISTRIBUTION_ACCOUNT.STELLAR.ENV' ? HOST_ACCOUNT : 'GNEW4567ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQ', distribution_account_type: body.distribution_account_type, distribution_account_status: 'ACTIVE' };
       return { status: 201, body: state.tenant };
     }
     if (p === '/login') {
@@ -306,5 +309,44 @@ describe('owner login: the log reset path is testnet only (fix round of 18 Octob
     const results = await provisionTenant(cfg, deps);
     expect(results.find((r) => r.step === 'owner login')?.outcome).toBe('done');
     expect(calls.some((c) => c.url.endsWith('/forgot-password'))).toBe(true);
+  });
+});
+
+describe('tenant distribution account type (SDP_TENANT_ACCOUNT_TYPE)', () => {
+  const postedType = (calls: Array<{ method: string; url: string; body?: string }>) =>
+    (JSON.parse(calls.find((c) => c.method === 'POST' && c.url.endsWith('/tenants'))!.body!) as { distribution_account_type: string }).distribution_account_type;
+
+  it('creates the tenant with the DB vault type when nothing is configured', async () => {
+    const { deps, calls } = fakeSdp();
+    const results = await provisionTenant(cfg, deps);
+    expect(postedType(calls as never)).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+    expect(results.find((r) => r.step === 'tenant exists')?.detail).toContain('(DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT)');
+  });
+
+  it('creates the tenant with the ENV type when configured, and reports the host account as its distribution account', async () => {
+    const { deps, calls } = fakeSdp();
+    const results = await provisionTenant({ ...cfg, tenantAccountType: 'DISTRIBUTION_ACCOUNT.STELLAR.ENV' }, deps);
+    expect(postedType(calls as never)).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    const detail = results.find((r) => r.step === 'tenant exists')?.detail ?? '';
+    expect(detail).toContain('(DISTRIBUTION_ACCOUNT.STELLAR.ENV)');
+    expect(detail).toContain(`${HOST_ACCOUNT.slice(0, 4)}...${HOST_ACCOUNT.slice(-4)}`);
+    expect(detail).not.toContain(HOST_ACCOUNT);
+  });
+
+  it('refuses an existing tenant whose type differs from the configured one, naming both, in either direction', async () => {
+    const vault = fakeSdp({ tenantExists: true });
+    await expect(provisionTenant({ ...cfg, tenantAccountType: 'DISTRIBUTION_ACCOUNT.STELLAR.ENV' }, vault.deps)).rejects.toThrow(
+      /has distribution account type DISTRIBUTION_ACCOUNT\.STELLAR\.DB_VAULT, but SDP_TENANT_ACCOUNT_TYPE asks for DISTRIBUTION_ACCOUNT\.STELLAR\.ENV/,
+    );
+    const env = fakeSdp({ tenantExists: true, tenantAccountType: 'DISTRIBUTION_ACCOUNT.STELLAR.ENV' });
+    await expect(provisionTenant(cfg, env.deps)).rejects.toThrow(/asks for DISTRIBUTION_ACCOUNT\.STELLAR\.DB_VAULT/);
+    expect(env.calls.some((c) => c.method === 'POST' && c.url.endsWith('/tenants'))).toBe(false);
+  });
+
+  it('accepts an existing tenant of the configured type and changes nothing', async () => {
+    const { deps, calls } = fakeSdp({ tenantExists: true, tenantAccountType: 'DISTRIBUTION_ACCOUNT.STELLAR.ENV' });
+    const results = await provisionTenant({ ...cfg, tenantAccountType: 'DISTRIBUTION_ACCOUNT.STELLAR.ENV' }, deps);
+    expect(results.find((r) => r.step === 'tenant exists')?.outcome).toBe('already');
+    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/tenants'))).toBe(false);
   });
 });
