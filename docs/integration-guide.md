@@ -251,6 +251,58 @@ with a time bound the transaction either makes it into a ledger exactly
 once or times out (developers.stellar.org, Horizon API reference, "Error
 Handling" and the "Timeout" status code, read 12 October 2026).
 
+### Running the service on a persistent volume, with no signer
+
+The operator-provisioned posture, in full: `USSD_CREATE_ON_DIAL=false`,
+`BRIDGE_SIGNER_MODULE` unset and `SPONSOR_SECRET_KEY` unset. The service
+then loads no signer at all (creation on dial is the only thing it would
+sign for), the boot log names no signer, and a dial from a number with no
+account ends at E3. Recipients are provisioned elsewhere, by
+`npm run provision` on an operator machine that holds the sponsor secret,
+and the service only reads what that run produced.
+
+Everything the service persists lives in `DATA_DIR` (default `data`,
+relative to the working directory): `accounts.json` (number to account,
+the adapter's JSON account store), `pins.json` (the adapter's JSON PIN
+store: scrypt hashes, failure counts and lockouts; never a PIN), and the
+pending-creations file, which stays empty with creation off. Nothing else
+is written there. A deployment that restarts the process must mount a
+volume at `DATA_DIR` that survives the restart, or every PIN is lost and
+every recipient sets one again on the next dial (the account record, not
+the PIN, is what binds a number). The files are personal data: encrypt
+the volume at rest and delete it when the deployment ends.
+
+Seeding the account store from a run made elsewhere, step by step:
+
+1. On the operator machine, `npm run provision` writes `data/accounts.json`
+   (and the SDP file). Record `sha256sum data/accounts.json`.
+2. Stop the service, or seed before its first start: the JSON stores are
+   read on each lookup but written by the adapter as whole files, so a
+   copy over a running service's directory is safe only while no PIN is
+   being set. Seeding before the first start avoids the question.
+3. Copy the file to `DATA_DIR/accounts.json` on the volume by whatever
+   path the deployment allows (a shell into the container, a mounted
+   path); never through a chat, a ticket or a repository.
+4. On the volume, `sha256sum accounts.json`; the two sums must match, and
+   both go into the run's evidence record. Then start the service and read
+   its boot line for `DATA_DIR` and creation off.
+5. Do not copy `pins.json` from anywhere: PINs are set by the recipients on
+   their first dial. If a `pins.json` exists from an earlier run of the
+   same numbers, keep it only if those recipients are the same people.
+
+Health: the adapter's listener answers only the callback path; a load
+balancer health check that needs an HTTP 200 does not get one from another
+path, so use a TCP check on `USSD_PORT`, or a check that POSTs a
+well-formed gateway callback (the readiness probe in `ussd:capture` does
+exactly that against the public URL).
+
+This repository ships the sandbox recorder, `npm run ussd:capture`, which
+starts a tunnel, records every request and stops after `--wait-minutes`;
+it is not the entrypoint of a long-running deployment. A deployment runs
+the listener from `createUssdServer(ussdConfigFromEnv(env))` (exported by
+the package) in its own entrypoint, without the tunnel and without the
+recorder.
+
 ### The account screen
 
 ```
