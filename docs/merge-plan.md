@@ -165,3 +165,24 @@ Delete the branches l2-network-config, l3-caps-and-batch-guards and
 l4a-injected-signer on the remote, and the worktrees locally. Record the
 merge commits in `EVIDENCE.md` only if the run they prepare produces
 evidence in this repository; otherwise the record lives with that run.
+
+## Note of 20 October 2026: delegation and execution
+
+Ramy Soliman approved #8, #9 and #10 and delegated the merge mechanics
+for this stack, and this stack only, to the working session on 20 October
+2026. Preconditions for every merge: both approvals (rasoliman, ismo90)
+on the current head, CI green on that head, mergeable state clean.
+
+What happened:
+
+| Pull request | Head merged | How | Commit on main |
+|---|---|---|---|
+| #8 L2 | c092060 (af719cc brought up to date with main through GitHub's update-branch, since the protection requires an up-to-date branch; both approvals held) | squash by the session, subject and body as in Part 2 | `c39ddf6` |
+| #9 L3 | a7edfa2 (retargeted to main, rebased with `--onto` so only the five L3 commits replayed, range-diff all identical; the push dismissed both approvals, which were given again) | merge commit by rasoliman, "Merge pull request #9", not the planned squash | `16575a7` |
+| #10 L4a | f03dc80 (same procedure, eight commits, range-diff all identical; approvals given again) | merge commit by rasoliman, "Merge pull request #10", not the planned squash | `ac4128b` |
+
+The branches l2-network-config, l3-caps-and-batch-guards and
+l4a-injected-signer were deleted from the remote after their merges. The
+annotated tag `v0.3.0-lisbon-base` marks `ac4128b` as the base for the
+Lisbon image. The hold "not for merge until Application 2 is verified" had
+been lifted by Ramy Soliman earlier the same day.
