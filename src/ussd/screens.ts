@@ -13,6 +13,7 @@
  * only.
  */
 import { CHAR_BUDGET, shortAccount, type Screen } from 'stellar-ussd-sep10-adapter';
+import { DEFAULT_CLOSING_LINE } from './closingLine.js';
 
 /**
  * Length of the gateway response prefix, `CON ` or `END ` (adapter
@@ -85,15 +86,15 @@ export const SCREENS = {
   /** E1 and A-7 */
   pinWrong: (attemptsLeft: number): Screen =>
     con('pinEnter', `Wrong PIN. ${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'} left\nEnter your PIN`),
-  /** Screen 7 and A-1 */
-  account: (accountId: string, view: AccountView, now: Date): Screen => {
+  /** Screen 7 and A-1. The closing line defaults to the contracted text (closingLine.ts). */
+  account: (accountId: string, view: AccountView, now: Date, closingLine: string = DEFAULT_CLOSING_LINE): Screen => {
     const last = view.lastReceived
       ? `Last received ${formatUsdc(view.lastReceived.amount)} USDC, ${formatDate(view.lastReceived.createdAt, now)}`
       : 'No payments received yet';
-    return end('account', `Signed in as ${shortAccount(accountId)}\nBalance ${formatUsdc(view.balance)} USDC\n${last}\nTest only, no funds move`);
+    return end('account', `Signed in as ${shortAccount(accountId)}\nBalance ${formatUsdc(view.balance)} USDC\n${last}\n${closingLine}`);
   },
-  /** Screen 8 */
-  about: (): Screen => end('about', 'Saleem, a payment service for basic phones.\nsaleem.digital\nTest only, no funds move'),
+  /** Screen 8. The closing line defaults to the contracted text (closingLine.ts). */
+  about: (closingLine: string = DEFAULT_CLOSING_LINE): Screen => end('about', `Saleem, a payment service for basic phones.\nsaleem.digital\n${closingLine}`),
   /** E2 */
   endLocked: (): Screen => end('locked', 'Too many attempts.\nTry again later.'),
   /** E3 */
@@ -109,8 +110,25 @@ export const SCREENS = {
 /** The largest classic amount, 2^63 - 1 stroops. */
 export const MAX_CHAIN_AMOUNT = '922337203685.4775807';
 
+/** The account screen at its longest dynamic values with the given closing line. */
+export function accountScreenAtMaxLength(closingLine: string = DEFAULT_CLOSING_LINE): Screen {
+  const now = new Date('2026-10-07T00:00:00Z');
+  return SCREENS.account('G'.padEnd(56, 'X'), { balance: MAX_CHAIN_AMOUNT, lastReceived: { amount: MAX_CHAIN_AMOUNT, createdAt: '2025-12-31T23:59:59Z' } }, now, closingLine);
+}
+
+/**
+ * The longest closing line that keeps both screens within TEXT_BUDGET.
+ * The account screen is the tighter of the two, so the room left on it at
+ * its longest dynamic values bounds the line.
+ */
+export function maxClosingLineLength(): number {
+  const withoutLine = accountScreenAtMaxLength('').text.length;
+  const aboutWithoutLine = SCREENS.about('').text.length;
+  return TEXT_BUDGET - Math.max(withoutLine, aboutWithoutLine);
+}
+
 /** Every screen at its longest dynamic values, for the budget test. */
-export function allScreensAtMaxLength(): Screen[] {
+export function allScreensAtMaxLength(closingLine: string = DEFAULT_CLOSING_LINE): Screen[] {
   const longestAccount = 'G'.padEnd(56, 'X');
   const now = new Date('2026-10-07T00:00:00Z');
   return [
@@ -130,9 +148,9 @@ export function allScreensAtMaxLength(): Screen[] {
     SCREENS.pinEnterBadFormat(),
     SCREENS.pinWrong(2),
     SCREENS.pinWrong(1),
-    SCREENS.account(longestAccount, { balance: MAX_CHAIN_AMOUNT, lastReceived: { amount: MAX_CHAIN_AMOUNT, createdAt: '2025-12-31T23:59:59Z' } }, now),
-    SCREENS.account(longestAccount, { balance: '0.0000000' }, now),
-    SCREENS.about(),
+    SCREENS.account(longestAccount, { balance: MAX_CHAIN_AMOUNT, lastReceived: { amount: MAX_CHAIN_AMOUNT, createdAt: '2025-12-31T23:59:59Z' } }, now, closingLine),
+    SCREENS.account(longestAccount, { balance: '0.0000000' }, now, closingLine),
+    SCREENS.about(closingLine),
     SCREENS.endLocked(),
     SCREENS.endNoAccount(),
     SCREENS.endServiceDown(),

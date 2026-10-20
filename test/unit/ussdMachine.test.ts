@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryAccountStore, InMemoryPinStore, InMemorySessionStore, verifyPin, type GatewayStep } from 'stellar-ussd-sep10-adapter';
-import { AccountNotOnChainError, CreationCappedError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, withInFlightGuard, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
+import { AccountNotOnChainError, CreationCappedError, NoUsdcTrustlineError, SCREENS, handleBridgeStep, loadAccountView, withInFlightGuard, type AccountView, type BridgeMachineDeps } from '../../src/ussd/index.js';
+import { toAccountRecord } from '../../src/provision/horizon.js';
 
 const MSISDN = '+999738035311';
 const ACCOUNT = 'G'.padEnd(56, 'Q');
@@ -279,5 +280,90 @@ describe('account screen errors and other screens', () => {
     expect(f.logs.join('\n')).not.toContain(PIN);
     const session = await f.deps.sessions.get('s1', NOW);
     expect(session?.maskedHistory).toEqual(['1', '####', '####']);
+  });
+});
+
+describe('closing line of screens 7 and 8 (configuration, L2)', () => {
+  it('a configured line replaces the contracted text on the account screen and About, and nowhere else', async () => {
+    const f = setup({ account: ACCOUNT, pin: PIN, view: { balance: '2.0000000', lastReceived: { amount: '2.0000000', createdAt: '2026-10-07T14:00:40Z' } } });
+    f.deps.closingLine = 'Demonstration service';
+    const a = f.dial('about');
+    await a();
+    const about = await a('2');
+    expect(about.text).toBe('Saleem, a payment service for basic phones.\nsaleem.digital\nDemonstration service');
+    const s = f.dial('acct');
+    expect((await s()).text).toBe(SCREENS.mainMenu().text);
+    expect((await s('1')).text).toBe('Enter your PIN');
+    const final = await s(PIN);
+    expect(final.text.split('\n')).toEqual([`Signed in as ${ACCOUNT.slice(0, 4)}..${ACCOUNT.slice(-4)}`, 'Balance 2.00 USDC', 'Last received 2.00 USDC, 7 Oct', 'Demonstration service']);
+    expect(final.text).not.toContain('Test only');
+  });
+
+  it('with no line configured, both screens carry the contracted text', async () => {
+    const f = setup({ account: ACCOUNT, pin: PIN });
+    const a = f.dial('about');
+    await a();
+    expect((await a('2')).text.endsWith('\nTest only, no funds move')).toBe(true);
+    const s = f.dial('acct');
+    await s(); await s('1');
+    expect((await s(PIN)).text.endsWith('\nTest only, no funds move')).toBe(true);
+  });
+});
+
+describe('account read retry seen from the machine (11 October finding)', () => {
+  const USDC = { code: 'USDC', issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' };
+  const record = () => toAccountRecord({ id: ACCOUNT, sequence: '1', subentry_count: 1, num_sponsoring: 0, num_sponsored: 3, balances: [{ asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: USDC.issuer, balance: '3.0000000' }] });
+  const transport = () => new TypeError('fetch failed', { cause: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }) });
+  /** The machine wired to the real loadAccountView over a Horizon fake that fails the listed times. */
+  function wired(failures: unknown[]) {
+    const f = setup({ account: ACCOUNT, pin: PIN });
+    const queue = [...failures];
+    let reads = 0;
+    const horizon = {
+      async loadAccount() { reads += 1; const e = queue.shift(); if (e !== undefined) throw e; return record(); },
+      async paymentsFor() { return [{ type: 'payment', created_at: '2026-10-07T14:01:06Z', transaction_hash: 'h', transaction_successful: true, from: 'G'.padEnd(56, 'S'), to: ACCOUNT, amount: '3.0000000', asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: USDC.issuer }]; },
+    };
+    f.deps.loadView = (id) => loadAccountView({ horizon, asset: USDC, sleep: async () => undefined, log: (l) => f.logs.push(l) }, id);
+    return { ...f, reads: () => reads };
+  }
+
+  it('a failure then a success shows the account screen', async () => {
+    const f = wired([transport()]);
+    const s = f.dial();
+    await s(); await s('1');
+    const final = await s(PIN);
+    expect(final.kind).toBe('end');
+    expect(final.text.split('\n').slice(0, 3)).toEqual([`Signed in as ${ACCOUNT.slice(0, 4)}..${ACCOUNT.slice(-4)}`, 'Balance 3.00 USDC', 'Last received 3.00 USDC, 7 Oct']);
+    expect(f.reads()).toBe(2);
+    expect(f.logs.some((l) => l === 'event=viewRetry code=TypeError cause=ECONNRESET pauseMs=1000')).toBe(true);
+    expect(f.logs.some((l) => l.includes('viewFailed'))).toBe(false);
+  });
+
+  it('two failures show E4, and the viewFailed line carries the attempt count and the underlying code', async () => {
+    const f = wired([transport(), transport()]);
+    const s = f.dial();
+    await s(); await s('1');
+    const final = await s(PIN);
+    expect(final.text).toBe('Service unavailable.\nPlease try again later.');
+    expect(f.reads()).toBe(2);
+    expect(f.logs.find((l) => l.includes('viewFailed'))).toBe('session=s1 event=viewFailed attempts=2 code=TypeError cause=ECONNRESET');
+  });
+
+  it('a 404 is not retried: E3 after one read', async () => {
+    const f = wired([Object.assign(new Error('nf'), { status: 404 })]);
+    const s = f.dial();
+    await s(); await s('1');
+    const final = await s(PIN);
+    expect(final.text).toBe('No account found for this number.\nDial again to set up.');
+    expect(f.reads()).toBe(1);
+    expect(f.logs.some((l) => l.includes('viewRetry'))).toBe(false);
+  });
+
+  it('a plain error from an injected loadView still maps to E4 with its class name as the code', async () => {
+    const f = setup({ account: ACCOUNT, pin: PIN, view: new Error('Horizon loadAccount did not answer within 2500 ms') });
+    const s = f.dial();
+    await s(); await s('1');
+    await s(PIN);
+    expect(f.logs.find((l) => l.includes('viewFailed'))).toBe('session=s1 event=viewFailed attempts=1 code=Error');
   });
 });

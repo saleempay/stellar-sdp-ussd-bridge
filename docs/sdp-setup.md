@@ -6,7 +6,8 @@ wallet address, with receiver invitations switched off. It is written for a
 wallet provider or NGO with no contact with Saleem. Every command below was
 run from a clean clone on 7 October 2026 (see `EVIDENCE.md`).
 
-Testnet only. Nothing here moves real money.
+Testnet is the only network this repository configures. Nothing here moves
+real money; see section 9 for how the network values are read and asserted.
 
 ## 1. What you need
 
@@ -156,7 +157,7 @@ sensitive as `sdp/.env`: do not paste it anywhere.
 To start again from nothing: `--reset`, then `npm run sdp:accounts --
 --force` (new accounts; the old ones stay funded on testnet and are
 abandoned), then `npm run sdp:up`. `sdp:accounts -- --force` refuses to
-run while the volume `${COMPOSE_PROJECT_NAME}_postgres-db-testnet` still
+run while the volume `${COMPOSE_PROJECT_NAME}_postgres-db-${NETWORK_TYPE}` still
 exists and names the `--reset` step in its message.
 
 ## 6. Troubleshooting
@@ -216,3 +217,165 @@ node scripts/capture-evidence.mjs
 The retest that produced the scoping and status evidence is
 `node scripts/retest-d1.mjs`; it writes `test-output/retest-d1.json` with
 every account masked.
+
+## 9. Network configuration, funding by hand, and multi-factor login
+
+Added 10 October 2026 (L2). None of this changes the testnet run above.
+
+### 9.1 Network values and the boot assertion
+
+The code reads five network values from the environment (`.env` for the
+bridge, `sdp/.env` for the SDP scripts): `NETWORK_TYPE`,
+`NETWORK_PASSPHRASE`, `HORIZON_URL`, `ASSET_ISSUER` and
+`EXPLORER_BASE_URL` (`src/sdp/network.ts`). The testnet values are the
+defaults and the only network literals in the repository.
+
+Every process that touches Horizon or the SDP runs the boot assertion
+first (`assertNetwork`): the USSD service, `npm run provision`,
+`sdp:up`/`sdp:check`, `sdp:upload`, `sdp:batch` and the two setup scripts.
+
+- `NETWORK_TYPE` unset or `testnet`: each value that is set must equal the
+  testnet value. A mixed configuration (for example a different
+  `HORIZON_URL` with the testnet passphrase) is refused.
+- any other `NETWORK_TYPE`: every value must be supplied, none may equal a
+  testnet value, and `BRIDGE_ACKNOWLEDGE_REAL_FUNDS` must read exactly
+  `yes`. The repository supplies none of those values.
+
+A refusal exits with code 2 and names each missing or mismatched variable,
+for example `HORIZON_URL does not equal the testnet value`. Values are not
+echoed.
+
+The live half (fix round of 18 October 2026, `verifyHorizonNetwork`): the
+string checks cannot tell a testnet mirror, a trailing slash or a
+different-case host from another network, so after them every process
+that uses Horizon (`provision`, `sdp:up`/`sdp:check`, `sdp:upload`,
+`sdp:batch`, the USSD capture service) reads the Horizon root document
+and refuses unless its `network_passphrase` equals `NETWORK_PASSPHRASE`.
+This runs on every network, testnet included, and fails closed when
+Horizon does not answer.
+
+Three more checks from the same fix round: `RPC_URL` in `sdp/.env` is
+asserted like the other SDP values (testnet: the testnet RPC when set;
+any other network: set and not the testnet RPC, so the compose default
+cannot be used by omission); `provision` and `sdp:upload` compare `.env`
+with `sdp/.env` (`assertSameNetwork`: type, passphrase, Horizon and
+issuer must match; off testnet both files are required, on testnet a
+missing one is noted); and the Postgres volume is named
+`<project>_postgres-db-<network type>` (fix round 3, 19 October: computed
+in one place, `postgresVolumeName`, lower-cased, written to `sdp/.env` as
+`SDP_POSTGRES_VOLUME` by `sdp:accounts`, recomputed and checked by
+`sdp:up`, `sdp:down` and the `--force` guard, and read by the compose file
+from that variable, since Compose cannot lower-case), so `sdp/.env`
+switched to another network never brings the stack up on the testnet
+database and the guard always inspects the name the stack uses. Every
+compose and docker command the scripts run gets an explicit environment,
+`PATH` and the Docker client's own variables (`DOCKER_HOST`,
+`DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_CERT_PATH`, `DOCKER_TLS_VERIFY`,
+`HOME`, `XDG_RUNTIME_DIR`, when set, so the engine you selected stays the
+engine the scripts and the `--force` guard talk to) plus the asserted
+`sdp/.env` plus the computed volume name, and no SDP value inherited from
+the shell (`composeEnvironment`): Compose gives shell variables precedence
+over `--env-file`, so an exported value would otherwise reach the
+containers while the assertion had approved the file.
+When you run compose by hand, as in section 5, do it from a shell that
+exports none of the SDP variables. Readiness step 8 (`usdc asset`) checks the configured issuer, the
+upload uses it to pick the asset, and explorer links are built from
+`EXPLORER_BASE_URL`.
+
+### 9.2 Generating accounts without Friendbot
+
+`npm run sponsor:setup -- --no-fund` and `npm run sdp:accounts -- --no-fund`
+generate and write the env file exactly as before but call no faucet. Each
+prints the masked account and its explorer link from the configured
+network, so the account can be funded by hand and checked. The run record
+in `test-output/` carries `funded: false`. Friendbot exists on testnet
+only (developers.stellar.org/docs/networks, "Friendbot Available"), so on
+any other network the scripts skip the faucet whether or not `--no-fund`
+is passed, and say so (fix round of 18 October 2026).
+
+### 9.3 Multi-factor login
+
+`sdp/docker-compose.yml` runs the SDP with `DISABLE_MFA` from `sdp/.env`,
+default `true` (unchanged behaviour). With `DISABLE_MFA=false` the SDP
+emails a verification code at login and answers `POST /login` with a
+message instead of a token (`internal/serve/httphandler/login_handler.go`
+at 7.0.0: the `Device-ID` header is required, lines 59 to 60; the token is
+returned directly when MFA is disabled or the device is remembered, lines
+130 to 132; otherwise the code is emailed and a message returned, lines
+133 to 137 and 163 to 173). The token then comes from `POST /mfa` with
+`{mfa_code, remember_me}` and the same `Device-ID` header
+(`internal/serve/httphandler/mfa_handler.go`: request shape lines 18 to
+22, header lines 35 and 48, verification line 92, token line 112; route at
+`internal/serve/serve.go:838`).
+
+The bridge's client (`SdpTenantClient.login`) handles both answers. When a
+code is required it asks the operator on standard input (`promptMfaCode`,
+`src/sdp/mfaPrompt.ts`); the code is never read from a file, a flag or a
+variable, and never logged. With MFA disabled the flow is a single request
+as before.
+
+Two switches, not one. The SDP decides per organisation first: when the
+organisation row carries a value in `mfa_disabled`, that value wins and
+the `DISABLE_MFA` environment flag is only the fallback
+(`internal/serve/httphandler/auth_utils.go:36-47`; the nullable column
+comes from `db/migrations/sdp-migrations/2025-09-10.0-add-org-level-mfa-captcha-settings.sql`,
+model `internal/data/organizations.go:55`). The row gets its first value
+when the tenant is created: the admin API handler copies the admin
+server's `DISABLE_MFA` flag into the provisioning request
+(`stellar-multitenant/internal/httphandler/tenants_handler.go:116` and
+`:129`, `orgMFADisabled := h.DisableMFA` passed as `MFADisabled`), the
+admin server takes that flag from the same `DISABLE_MFA` option as the API
+(`cmd/serve.go:321,727`), and the provisioning manager writes it to the
+new tenant's organisation row together with the name
+(`stellar-multitenant/internal/provisioning/manager.go:341-346`,
+`models.Organizations.Update`). The two tenants were created while the
+stack ran with `DISABLE_MFA=true`, so both rows read `mfa_disabled: true`,
+and flipping the environment flag afterwards changes nothing for them.
+
+The bridge handles this in two ways (L2 fix round, 10 October 2026):
+
+- Readiness step `mfa setting`, after the owner login. On testnet it
+  reports the organisation's value and changes nothing. On any other
+  network it requires `mfa_disabled` to be `false`: when it is `true` (or
+  absent) the step sets it to `false`, logs in again (the SDP now asks for
+  the emailed code) and reads the value back.
+- The senders and the log (fix round of 18 October 2026). `EMAIL_SENDER_TYPE`,
+  `SMS_SENDER_TYPE`, `ENVIRONMENT`, `DISABLE_RECAPTCHA` and
+  `CORS_ALLOWED_ORIGINS` now come from `sdp/.env` with the former fixed
+  values as the testnet defaults. The dry run sender writes every message,
+  MFA codes and password reset links included, to the `sdp-api` log
+  (`internal/message/dry_run_client.go:17-21`), and the readiness step
+  `owner login` reads reset links from that log. On any other network both
+  are refused: the boot assertion refuses `EMAIL_SENDER_TYPE` unset or
+  `DRY_RUN`, and since fix round 3 (19 October) `ENVIRONMENT` unset or
+  `localhost` and `CORS_ALLOWED_ORIGINS` unset or `*` as well
+  (`src/sdp/env.ts`, `assertStackSettingsForNetwork`), and `owner login`
+  refuses the log-reading reset path, so the owner password is set through
+  a real channel (the SDP's own reset email) before the readiness run. On
+  testnet nothing changes.
+- Strict client mode on any other network (`strictMfa`, derived from
+  `NETWORK_TYPE`): the client never asks the SDP to remember the device
+  (`remember_me` is always `false`), and a token the SDP issued without a
+  code may be used for exactly one call, the `PATCH /organization` that
+  sets `mfa_disabled` to `false`. Every other call with such a token is
+  refused before it reaches the wire (`MfaRequiredError`). On testnet
+  nothing changes.
+
+To require a code on this local stack by hand: set `DISABLE_MFA=false` in
+`sdp/.env`, recreate `sdp-api`, and set `mfa_disabled` to `false` on the
+organisation (`PATCH /organization`, multipart field `data`).
+
+Live check, 10 October 2026, 18:28 UTC, local testnet stack: with both
+switches set as above and the dry-run email sender, `npm run sdp:check`
+logged in to the bridge tenant. The SDP answered `POST /login` with the
+"MFA code sent" message, printed the verification email in the `sdp-api`
+container log ("Your verification code is:", the dry-run sender,
+`internal/message/dry_run_client.go:17-21`), the bridge asked for the code
+on standard input, the operator typed the six digits read from the log,
+`POST /mfa` returned 200 with the token, and every readiness step
+reported `already` or `ok`. The scope test tenant, whose organisation
+kept `mfa_disabled: true`, logged in with a single request in the same
+run. Afterwards the organisation flag and `DISABLE_MFA=true` were
+restored and `sdp-api` recreated. The dry-run sender does expose the
+code, so no offline-only fallback was needed.
+

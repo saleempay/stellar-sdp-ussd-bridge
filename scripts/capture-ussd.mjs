@@ -36,8 +36,8 @@ import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import {
-  assessDialReadiness, captureBanner, createUssdServer, describeExchange, normaliseHostname, parseQuickTunnelHostname,
-  readinessReport, recordingListener, tunnelCommand, tunnelConfigFromEnv, tunnelStartNotice, ussdConfigFromEnv,
+  ClosingLineError, NetworkConfigError, assessDialReadiness, captureBanner, createUssdServer, describeExchange, normaliseHostname,
+  parseQuickTunnelHostname, readinessReport, recordingListener, tunnelCommand, tunnelConfigFromEnv, tunnelStartNotice, ussdConfigFromEnv, verifyHorizonNetwork,
 } from '../dist/index.js';
 
 const args = process.argv.slice(2);
@@ -47,8 +47,11 @@ const waitMinutes = Number(opt('--wait-minutes') ?? 30);
 const externalUrl = (opt('--tunnel-url') ?? process.env.TUNNEL_BASE_URL ?? '').replace(/\/+$/, '');
 let env;
 try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.env not found'); process.exit(2); }
-const cfg = ussdConfigFromEnv(env);
+let cfg;
+try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfigError || e instanceof ClosingLineError) { console.error(e.message); process.exit(2); } throw e; }
 if (!cfg.callbackPath) { console.error('USSD_CALLBACK_PATH is not set in .env (a long random segment, never printed)'); process.exit(2); }
+// Live half of the boot assertion: Horizon's root must report the configured passphrase.
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
 let tunnelCfg;
 try { tunnelCfg = externalUrl ? { mode: 'external', hostname: normaliseHostname(externalUrl) } : tunnelConfigFromEnv(env); } catch (e) { console.error(e.message); process.exit(2); }
 

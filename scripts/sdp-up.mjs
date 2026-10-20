@@ -20,9 +20,12 @@ import {
   dashboardUrlFor,
   formatReport,
   loadEnvFile,
+  promptMfaCode,
   provisionTenant,
   readinessConfigFor,
+  composeEnvironment,
   sdpConfigFromEnv,
+  verifyHorizonNetwork,
 } from '../dist/index.js';
 
 const ENV_PATH = 'sdp/.env';
@@ -35,20 +38,29 @@ function fail(message, code = 1) {
 }
 
 let cfg;
+let fileEnv;
+let composeEnv;
 try {
-  cfg = sdpConfigFromEnv(loadEnvFile(ENV_PATH));
+  fileEnv = loadEnvFile(ENV_PATH);
+  cfg = sdpConfigFromEnv(fileEnv);
+  // compose runs with PATH, the asserted file and the computed volume name only:
+  // nothing exported in the shell can reach the containers unchecked
+  composeEnv = composeEnvironment(fileEnv);
 } catch (e) {
   fail(e instanceof ConfigError ? e.message : String(e), 2);
 }
 
+// Live half of the boot assertion: the configured Horizon must report the configured passphrase.
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { fail(e.message, 2); }
+
 if (!checkOnly) {
   console.log('docker compose up -d ...');
-  const up = spawnSync('docker', [...COMPOSE, 'up', '-d'], { stdio: 'inherit' });
+  const up = spawnSync('docker', [...COMPOSE, 'up', '-d'], { stdio: 'inherit', env: composeEnv });
   if (up.status !== 0) fail(`docker compose up exited with ${up.status ?? 'signal'}`);
 }
 
 const admin = new SdpAdminClient({ baseUrl: cfg.adminUrl, adminAccount: cfg.adminAccount, adminApiKey: cfg.adminApiKey });
-const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: name });
+const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenantName: name, strictMfa: cfg.strictMfa });
 
 /**
  * Read the password reset token from the SDP API container log. With
@@ -64,7 +76,7 @@ const tenantClient = (name) => new SdpTenantClient({ baseUrl: cfg.apiUrl, tenant
 function scanLog(args, match) {
   return new Promise((resolve, reject) => {
     const scanner = new ResetTokenScanner(match);
-    const child = spawn('docker', [...COMPOSE, 'logs', '--no-color', '--no-log-prefix', ...args, 'sdp-api'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const child = spawn('docker', [...COMPOSE, 'logs', '--no-color', '--no-log-prefix', ...args, 'sdp-api'], { stdio: ['ignore', 'pipe', 'ignore'], env: composeEnv });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk) => scanner.push(chunk));
     child.on('error', reject);
@@ -92,6 +104,9 @@ const deps = {
   admin,
   tenantClient,
   readResetToken,
+  // With MFA enabled on the stack the SDP emails a code at login; the
+  // operator types it here. Nothing happens with MFA disabled.
+  mfaCode: promptMfaCode(),
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
 };

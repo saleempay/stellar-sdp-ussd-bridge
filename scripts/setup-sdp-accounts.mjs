@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * TESTNET ONLY. Generates every secret the SDP stack needs, funds the host
- * distribution account through Friendbot, and writes sdp/.env (mode 600)
- * from sdp/.env.example. It prints masked public addresses and the
- * Friendbot transaction hash. It never prints a secret.
+ * Generates every secret the SDP stack needs, funds the host distribution
+ * account through Friendbot (testnet), and writes sdp/.env (mode 600) from
+ * sdp/.env.example. It prints masked public addresses and the Friendbot
+ * transaction hash. It never prints a secret.
  *
  * Refuses to overwrite an existing sdp/.env unless --force is given, and
  * refuses --force while the stack's Postgres volume still exists: the two
@@ -12,17 +12,27 @@
  * new passphrases over an old volume leave every tenant unable to sign.
  * Run `npm run sdp:down -- --reset` first.
  *
- * Usage: npm run sdp:accounts [-- --force]
+ * Usage: npm run sdp:accounts [-- --force] [-- --no-fund]
+ *
+ * --no-fund generates and writes without calling Friendbot and prints the
+ * explorer link of the host distribution account from the configured
+ * network, for funding by hand. The network values come from the template
+ * overlaid by the process environment, through the boot assertion: a
+ * network other than testnet needs every value supplied and
+ * BRIDGE_ACKNOWLEDGE_REAL_FUNDS=yes.
  */
 import { Keypair } from '@stellar/stellar-sdk';
 import { spawnSync } from 'node:child_process';
 import { randomBytes, randomInt, generateKeyPairSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
+import { NetworkConfigError, assertNetwork, composeEnvironment, dockerClientEnvironment, explorerAccountUrl, explorerTxUrl, postgresVolumeName as volumeNameFor, resolvePostgresVolume } from '../dist/index.js';
 
 const ENV_PATH = 'sdp/.env';
 const TEMPLATE_PATH = 'sdp/.env.example';
 const FRIENDBOT_URL = process.env.FRIENDBOT_URL || 'https://friendbot.stellar.org';
 const force = process.argv.includes('--force');
+const noFundFlag = process.argv.includes('--no-fund');
 
 if (existsSync(ENV_PATH) && !force) {
   console.error(`${ENV_PATH} already exists. Re-run with --force to replace it (the old accounts are abandoned).`);
@@ -31,17 +41,16 @@ if (existsSync(ENV_PATH) && !force) {
 
 /**
  * The Compose volume name, as sdp/docker-compose.yml builds it:
- * ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-testnet. The project name
- * is read from the existing sdp/.env, then the environment, then the default.
+ * ${COMPOSE_PROJECT_NAME:-sdp-bridge}_postgres-db-${NETWORK_TYPE:-testnet}.
+ * Project name and network type are read from the existing sdp/.env, then
+ * the environment, then the defaults (src/sdp/env.ts, postgresVolumeName).
  */
 function postgresVolumeName() {
-  let fromEnvFile;
   if (existsSync(ENV_PATH)) {
-    const m = /^COMPOSE_PROJECT_NAME=(.*)$/m.exec(readFileSync(ENV_PATH, 'utf8'));
-    if (m) fromEnvFile = m[1].trim().replace(/^["']|["']$/g, '');
+    // the existing file decides, and its written name must agree with the computed one
+    return resolvePostgresVolume(parseEnv(readFileSync(ENV_PATH, 'utf8')));
   }
-  const project = fromEnvFile || process.env.COMPOSE_PROJECT_NAME || 'sdp-bridge';
-  return `${project}_postgres-db-testnet`;
+  return volumeNameFor(process.env.COMPOSE_PROJECT_NAME, process.env.NETWORK_TYPE);
 }
 
 if (force) {
@@ -50,7 +59,8 @@ if (force) {
   // Exit 0 means it exists. A stopped daemon or a missing binary also exits
   // non-zero, so only Docker's own "no such volume" answer counts as absent;
   // anything else refuses, because the volume may well still be on disk.
-  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { encoding: 'utf8' });
+  // docker runs with PATH, the Docker client's own variables and the file only, like compose (fix round 3)
+  const inspect = spawnSync('docker', ['volume', 'inspect', volume], { encoding: 'utf8', env: existsSync(ENV_PATH) ? composeEnvironment(parseEnv(readFileSync(ENV_PATH, 'utf8'))) : dockerClientEnvironment() });
   if (inspect.status === 0) {
     console.error(`--force refused: the Docker volume ${volume} still exists. Its tenant distribution keys are encrypted under the passphrases in the current ${ENV_PATH}; new passphrases would leave every tenant unable to sign. Run \`npm run sdp:down -- --reset\` first, then re-run with --force.`);
     process.exit(2);
@@ -81,6 +91,21 @@ function password(len = 24) {
   return chars.join('');
 }
 
+let template;
+try {
+  template = readFileSync(TEMPLATE_PATH, 'utf8');
+} catch {
+  console.error(`template ${TEMPLATE_PATH} not found`);
+  process.exit(1);
+}
+let network;
+try {
+  network = assertNetwork({ ...parseEnv(template), ...process.env });
+} catch (e) {
+  console.error(e instanceof NetworkConfigError ? e.message : String(e));
+  process.exit(2);
+}
+
 const distribution = Keypair.random();
 const sep10 = Keypair.random();
 const distEnc = Keypair.random();
@@ -100,17 +125,12 @@ const values = {
   EC256_PRIVATE_KEY: `"${ecPem}"`,
   BRIDGE_OWNER_PASSWORD: password(),
   SCOPETEST_OWNER_PASSWORD: password(),
+  // the volume name, computed once here and read by the compose file
+  SDP_POSTGRES_VOLUME: volumeNameFor(parseEnv(template).COMPOSE_PROJECT_NAME || process.env.COMPOSE_PROJECT_NAME, network.networkType),
 };
 
 // The template is validated before Friendbot is asked for anything: a
 // broken template must not cost a funded account.
-let template;
-try {
-  template = readFileSync(TEMPLATE_PATH, 'utf8');
-} catch {
-  console.error(`template ${TEMPLATE_PATH} not found`);
-  process.exit(1);
-}
 const unfilled = Object.keys(values).filter((k) => !new RegExp(`^${k}=`, 'm').test(template));
 if (unfilled.length) {
   console.error(`template ${TEMPLATE_PATH} lacks keys: ${unfilled.join(', ')}`);
@@ -125,27 +145,42 @@ const filled = template
   })
   .join('\n');
 
-console.log('Generated keypairs. Requesting Friendbot funding for the host distribution account...');
-const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(distribution.publicKey())}`);
-if (!res.ok) {
-  console.error(`Friendbot funding failed: HTTP ${res.status}`);
-  console.error((await res.text()).slice(0, 500));
-  process.exit(1);
+// Friendbot exists on testnet only: off testnet the faucet is never asked,
+// whether or not --no-fund was passed (review of 13 October, minor).
+const noFund = noFundFlag || network.networkType !== 'testnet';
+let funding;
+if (noFund) {
+  console.log(noFundFlag
+    ? `Generated keypairs for network ${network.networkType}. Host distribution account not funded (--no-fund).`
+    : `Generated keypairs for network ${network.networkType}. Host distribution account not funded: Friendbot is testnet only, so funding is skipped on this network (fund by hand).`);
+} else {
+  console.log(`Generated keypairs for network ${network.networkType}. Requesting Friendbot funding for the host distribution account...`);
+  const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(distribution.publicKey())}`);
+  if (!res.ok) {
+    console.error(`Friendbot funding failed: HTTP ${res.status}`);
+    console.error((await res.text()).slice(0, 500));
+    process.exit(1);
+  }
+  funding = await res.json();
 }
-const funding = await res.json();
 
 writeFileSync(ENV_PATH, `${filled.trimEnd()}\n`, { mode: 0o600 });
 chmodSync(ENV_PATH, 0o600);
 
 mkdirSync('test-output', { recursive: true });
-writeFileSync(
-  'test-output/sdp-accounts-funding.json',
-  `${JSON.stringify({ fundedAt: new Date().toISOString(), distributionPublicKeyMasked: mask(distribution.publicKey()), friendbotTxHash: funding.hash, ledger: funding.ledger }, null, 2)}\n`,
-);
+const record = funding
+  ? { fundedAt: new Date().toISOString(), network: network.networkType, distributionPublicKeyMasked: mask(distribution.publicKey()), friendbotTxHash: funding.hash, ledger: funding.ledger }
+  : { fundedAt: null, network: network.networkType, distributionPublicKeyMasked: mask(distribution.publicKey()), funded: false };
+writeFileSync('test-output/sdp-accounts-funding.json', `${JSON.stringify(record, null, 2)}\n`);
 
 console.log('');
-console.log(`Host distribution account ${mask(distribution.publicKey())} funded by Friendbot.`);
-console.log(`  tx ${funding.hash}`);
-console.log(`  https://stellar.expert/explorer/testnet/tx/${funding.hash}`);
+if (funding) {
+  console.log(`Host distribution account ${mask(distribution.publicKey())} funded by Friendbot.`);
+  console.log(`  tx ${funding.hash}`);
+  console.log(`  ${explorerTxUrl(network, funding.hash)}`);
+} else {
+  console.log(`Host distribution account ${mask(distribution.publicKey())} written, not funded. Fund it by hand, then check it here:`);
+  console.log(`  ${explorerAccountUrl(network, distribution.publicKey())}`);
+}
 console.log(`SEP-10 signing account ${mask(sep10.publicKey())} (not funded; it only signs).`);
 console.log(`Wrote ${ENV_PATH} (mode 600). Never commit it, paste it, or show it on screen.`);

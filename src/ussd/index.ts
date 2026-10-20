@@ -1,4 +1,5 @@
 export * from './errors.js';
+export * from './closingLine.js';
 export * from './screens.js';
 export * from './walkthrough.js';
 export * from './accountView.js';

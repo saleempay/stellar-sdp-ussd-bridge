@@ -256,7 +256,7 @@ async function provisionRow(row: InputRow, deps: ProvisionDeps): Promise<RowOutc
       const t = asTimeout(err);
       if (t) return fail(base, new HorizonTimeoutError(t.operation, t.timeoutMs, row.rowIndex));
       if (isHorizonNotFound(err)) {
-        return fail(base, new ResolverFailureError(row.rowIndex, `the mapped account ${maskAccount(accountId)} is not on chain (testnet reset?); the mapping was left in place for reconciliation`, accountId));
+        return fail(base, new ResolverFailureError(row.rowIndex, `the mapped account ${maskAccount(accountId)} is not on chain (network reset, or a stale mapping?); the mapping was left in place for reconciliation`, accountId));
       }
       return fail(base, new ResolverFailureError(row.rowIndex, `Horizon could not read ${maskAccount(accountId)}: ${(err as Error).message}`, accountId, { cause: err }));
     }

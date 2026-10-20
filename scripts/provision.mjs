@@ -22,7 +22,7 @@
  * write the rows that succeeded together with <output>.partial.json, the
  * sidecar sdp:upload checks (it refuses the file unless --accept-partial).
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parseEnv } from 'node:util';
 import { JsonFileAccountStore, JsonFilePinStore, LocalKeypairSigner } from 'stellar-ussd-sep10-adapter';
@@ -30,10 +30,10 @@ import {
   BridgeError,
   FetchHorizon,
   JsonFilePendingStore,
-  TESTNET_HORIZON_URL,
-  TESTNET_NETWORK_PASSPHRASE,
-  TESTNET_USDC_ISSUER,
+  NetworkConfigError,
   USDC_CODE,
+  assertNetwork,
+  assertSameNetwork,
   formatProvisionReport,
   maskAccount,
   parseInputCsv,
@@ -41,6 +41,7 @@ import {
   partialSidecarPath,
   provisionRecipients,
   sha256Hex,
+  verifyHorizonNetwork,
   writeSdpCsv,
 } from '../dist/index.js';
 
@@ -61,10 +62,25 @@ try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.en
 for (const k of ['SPONSOR_PUBLIC_KEY', 'SPONSOR_SECRET_KEY']) {
   if (!env[k]) { console.error(`${k} missing in .env`); process.exit(2); }
 }
-const horizonUrl = env.HORIZON_URL || TESTNET_HORIZON_URL;
-const networkPassphrase = env.NETWORK_PASSPHRASE || TESTNET_NETWORK_PASSPHRASE;
-if (networkPassphrase !== TESTNET_NETWORK_PASSPHRASE) { console.error('this bridge runs on testnet only'); process.exit(2); }
-const asset = { code: env.ASSET_CODE || USDC_CODE, issuer: env.ASSET_ISSUER || TESTNET_USDC_ISSUER };
+// Boot assertion: testnet values must be the testnet constants; any other
+// network needs every value supplied and BRIDGE_ACKNOWLEDGE_REAL_FUNDS=yes.
+let network;
+try { network = assertNetwork(env); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+// The SDP that will pay from this file reads sdp/.env; both files must name
+// the same network. On testnet a missing sdp/.env is noted; elsewhere it is
+// required, so the comparison can never be skipped by leaving it out.
+const SDP_ENV_PATH = 'sdp/.env';
+if (existsSync(SDP_ENV_PATH)) {
+  try { assertSameNetwork({ label: '.env', env }, { label: SDP_ENV_PATH, env: parseEnv(readFileSync(SDP_ENV_PATH, 'utf8')) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+} else if (network.networkType !== 'testnet') {
+  console.error(`${SDP_ENV_PATH} not found: a run on network type "${network.networkType}" needs both .env and ${SDP_ENV_PATH} so their network values can be compared`);
+  process.exit(2);
+} else {
+  console.log(`${SDP_ENV_PATH} not present; network comparison with the SDP skipped (testnet)`);
+}
+const horizonUrl = network.horizonUrl;
+const networkPassphrase = network.networkPassphrase;
+const asset = { code: env.ASSET_CODE || USDC_CODE, issuer: network.assetIssuer };
 
 let rows;
 try {
@@ -91,7 +107,9 @@ const deps = {
   paymentIdPrefix: basename(input).replace(/\.csv$/i, ''),
 };
 
-console.log(`sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows, data in ${dataDir}/`);
+// Live half of the boot assertion: Horizon's root must report the configured passphrase.
+try { await verifyHorizonNetwork(network, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+console.log(`network ${network.networkType} (Horizon root confirms the passphrase), sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows, data in ${dataDir}/`);
 let report;
 try {
   report = await provisionRecipients(rows, deps);

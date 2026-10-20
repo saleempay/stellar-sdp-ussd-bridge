@@ -26,10 +26,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { FetchHorizon } from '../provision/horizon.js';
 import { InMemoryPendingStore, JsonFilePendingStore, type PendingCreationStore } from '../provision/pending.js';
-import { TESTNET_HORIZON_URL, TESTNET_NETWORK_PASSPHRASE, TESTNET_USDC_ISSUER, USDC_CODE } from '../sdp/facts.js';
+import { USDC_CODE } from '../sdp/facts.js';
+import { NETWORK_ENV, NetworkConfigError, TESTNET_FACTS, TESTNET_NETWORK_TYPE, assertNetwork, type NetworkFacts } from '../sdp/network.js';
 import { loadAccountView } from './accountView.js';
+import { closingLineFromEnv } from './closingLine.js';
 import { DEFAULT_CREATION_CAPS, createOnDial, type CreationCaps } from './createOnDial.js';
 import { handleBridgeStep, type BridgeMachineDeps } from './machine.js';
+import { maxClosingLineLength } from './screens.js';
 
 export interface UssdServerConfig {
   callbackPath: string;
@@ -38,9 +41,12 @@ export interface UssdServerConfig {
   createOnDial: boolean;
   /** Directory holding accounts.json and pins.json. Undefined: in-memory stores. */
   dataDir?: string;
-  horizonUrl?: string;
-  networkPassphrase?: string;
-  asset?: { code: string; issuer: string };
+  /** The network, after the boot assertion (ussdConfigFromEnv runs it). Testnet when absent. */
+  network?: NetworkFacts;
+  /** Asset code; the issuer is the network's. */
+  assetCode?: string;
+  /** Closing line of screens 7 and 8; the contracted text when absent. */
+  closingLine?: string;
   /** Sponsor secret for creation on dial; required when createOnDial is true. */
   sponsorSecretKey?: string;
   /** Creation on dial caps; DEFAULT_CREATION_CAPS when omitted. */
@@ -63,6 +69,19 @@ function positiveNumber(name: string, raw: string | undefined, fallback: number)
   return n;
 }
 
+/**
+ * Configuration from the environment. Runs the boot assertion
+ * (NetworkConfigError when the network values are missing or mixed) and
+ * validates the closing line (ClosingLineError); both are refusals the
+ * process should report and exit on. Creation on dial fails closed: off
+ * unless USSD_CREATE_ON_DIAL is exactly true, and capped (D5); on any
+ * network other than testnet it is refused at boot (NetworkConfigError),
+ * because creation on dial is a demonstration posture: it creates an
+ * account for whoever dials, with the sponsor's reserves, and the
+ * reference signer keeps no key for it. Elsewhere recipients are
+ * provisioned by the operator (`npm run provision`) and an unknown number
+ * sees E3.
+ */
 export function ussdConfigFromEnv(env: Record<string, string | undefined>): UssdServerConfig {
   // fail closed: creation on dial is off unless the environment says true
   const createOnDial = (env.USSD_CREATE_ON_DIAL ?? '').trim().toLowerCase() === 'true';
@@ -70,15 +89,22 @@ export function ussdConfigFromEnv(env: Record<string, string | undefined>): Ussd
     minSponsorXlm: positiveNumber('USSD_CREATE_MIN_SPONSOR_XLM', env.USSD_CREATE_MIN_SPONSOR_XLM, DEFAULT_CREATION_CAPS.minSponsorXlm),
     maxPerHour: positiveNumber('USSD_CREATE_MAX_PER_HOUR', env.USSD_CREATE_MAX_PER_HOUR, DEFAULT_CREATION_CAPS.maxPerHour),
   };
+  const network = assertNetwork(env);
+  if (createOnDial && network.networkType !== TESTNET_NETWORK_TYPE) {
+    throw new NetworkConfigError([
+      `USSD_CREATE_ON_DIAL=true is refused for network type "${network.networkType}" (${NETWORK_ENV.networkType}): creation on dial is a testnet demonstration posture; on any other network recipients are provisioned by the operator, so leave USSD_CREATE_ON_DIAL unset or false`,
+    ]);
+  }
+  const closingLine = closingLineFromEnv(env, maxClosingLineLength());
   return {
     callbackPath: env.USSD_CALLBACK_PATH ?? '',
     allowedCidrs: env.USSD_ALLOWED_CIDRS,
     defaultCountryCode: env.USSD_DEFAULT_COUNTRY_CODE ?? '254',
     createOnDial,
     dataDir: env.DATA_DIR ?? 'data',
-    horizonUrl: env.HORIZON_URL,
-    networkPassphrase: env.NETWORK_PASSPHRASE,
-    asset: { code: env.ASSET_CODE || USDC_CODE, issuer: env.ASSET_ISSUER || TESTNET_USDC_ISSUER },
+    network,
+    assetCode: env.ASSET_CODE || USDC_CODE,
+    closingLine,
     sponsorSecretKey: env.SPONSOR_SECRET_KEY,
     creationCaps,
     sessionTtlMs: env.USSD_SESSION_TTL_MS ? Number(env.USSD_SESSION_TTL_MS) : undefined,
@@ -87,10 +113,11 @@ export function ussdConfigFromEnv(env: Record<string, string | undefined>): Ussd
 
 export function createUssdServer(cfg: UssdServerConfig): UssdServer {
   const log = cfg.log ?? (() => undefined);
-  const asset = cfg.asset ?? { code: USDC_CODE, issuer: TESTNET_USDC_ISSUER };
-  const networkPassphrase = cfg.networkPassphrase ?? TESTNET_NETWORK_PASSPHRASE;
-  if (networkPassphrase !== TESTNET_NETWORK_PASSPHRASE) throw new Error('this service runs on testnet only');
-  const horizon = new FetchHorizon(cfg.horizonUrl ?? TESTNET_HORIZON_URL, { timeoutMs: cfg.legTimeoutMs ?? SESSION_LEG_TIMEOUT_MS });
+  const network = cfg.network ?? TESTNET_FACTS;
+  const asset = { code: cfg.assetCode ?? USDC_CODE, issuer: network.assetIssuer };
+  const networkPassphrase = network.networkPassphrase;
+  const legTimeoutMs = cfg.legTimeoutMs ?? SESSION_LEG_TIMEOUT_MS;
+  const horizon = new FetchHorizon(network.horizonUrl, { timeoutMs: legTimeoutMs });
   const sessions = cfg.sessionTtlMs ? new InMemorySessionStore(cfg.sessionTtlMs) : new InMemorySessionStore();
   const pins: PinStore = cfg.dataDir ? new JsonFilePinStore(join(cfg.dataDir, 'pins.json')) : new InMemoryPinStore();
   const accounts: AccountStore = cfg.dataDir ? new JsonFileAccountStore(join(cfg.dataDir, 'accounts.json')) : new (class implements AccountStore {
@@ -106,7 +133,7 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
     const signer = new LocalKeypairSigner();
     const sponsorPublicKey = signer.importSecret(cfg.sponsorSecretKey);
     // creation uses a longer deadline than a read: one Horizon submission
-    const creationHorizon = new FetchHorizon(cfg.horizonUrl ?? TESTNET_HORIZON_URL, { timeoutMs: 8_000 });
+    const creationHorizon = new FetchHorizon(network.horizonUrl, { timeoutMs: 8_000 });
     // the same pending store the command line writes (pending.ts)
     const pendingStore: PendingCreationStore = cfg.dataDir ? new JsonFilePendingStore(join(cfg.dataDir, 'pending-creations.json')) : new InMemoryPendingStore();
     const create = createOnDial({ store: accounts, signer, horizon: creationHorizon, networkPassphrase, sponsorPublicKey, asset, pendingStore, caps: cfg.creationCaps ?? DEFAULT_CREATION_CAPS, log });
@@ -120,10 +147,12 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
     sessions,
     pins,
     accounts,
-    loadView: (accountId) => loadAccountView({ horizon, asset }, accountId),
+    // one retry of a transport failure or a 5xx inside the 7 s budget (accountView.ts)
+    loadView: (accountId) => loadAccountView({ horizon, asset, legTimeoutMs, log }, accountId),
     msisdn: { defaultCountryCode: cfg.defaultCountryCode },
     log,
   };
+  if (cfg.closingLine !== undefined) machine.closingLine = cfg.closingLine;
   if (createAccount) machine.createAccount = createAccount;
 
   const listener = createUssdRequestListener({
