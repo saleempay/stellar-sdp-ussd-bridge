@@ -350,6 +350,53 @@ from Horizon and prints the table: recipient (masked), amount, status,
 transaction hash, ledger. Each recipient then sees the payment on their
 next dial. The run is recorded under `test-output/d4-batch/`.
 
+### Caps and guards
+
+Three caps, enforced in the bridge because the SDP has no cap feature on
+this route (no cap configuration in `dev/.env.example` or `cmd/serve.go`
+at tag 7.0.0). The defaults are the same on every network.
+
+| Cap | Variable | Default | Where it bites |
+|---|---|---|---|
+| per payment | `MAX_PAYMENT_USDC` (`.env`, and `sdp/.env` for `sdp:batch`) | 5 USDC | `npm run provision` refuses the whole input file when any row is above it, before any account is created or any file is written; `npm run sdp:batch` refuses the disbursement about to start when any of its payments is above it, whatever path produced the disbursement (a hand-edited or partial file, a re-upload, the dashboard), in `--check-only` too |
+| per batch | `MAX_BATCH_USDC` (`.env`, and `sdp/.env` for `sdp:batch`) | 25 USDC | same, when the file's sum (string arithmetic on stroops) is above it; and `sdp:batch` refuses when the disbursement's total is above it |
+| on the account | `MAX_ACCOUNT_USDC` (`sdp/.env`) | 100 USDC | `npm run sdp:batch` refuses, in `--check-only` too, when the distribution account holds more; move the excess out first |
+
+Two guards run before `sdp:batch` starts a disbursement (not with
+`--skip-start`, which only follows a batch already started):
+
+- no disbursement is in `STARTED` (`GET /disbursements?status=started,paused`,
+  paged, on every distribution account of the tenant); no flag lifts this;
+- a disbursement in `PAUSED` refuses unless `--second-run "<reason>"` is
+  given and none of its payments is `READY` or `PENDING`, the two states
+  that reach the network without a further operator action (a `PAUSED`
+  payment moves only on resume, a `FAILED` one only on retry). The SDP
+  itself allows a second start while another disbursement is paused and
+  counts the paused payments against the balance
+  (`internal/services/disbursement_management_service.go:326-359` at
+  7.0.0), so the drain disbursement after a pause must be for the balance
+  less the paused commitments; `--check-only` prints that total;
+- no batch was started on the current UTC day, unless the operator passes
+  `--second-run "<reason>"`; the reason is written to the run log. Two
+  sources decide and either suffices: the run log (`BATCH_RUN_LOG`, default
+  `data/batch-run-log.jsonl`, one JSON object per line, appended at start
+  and at finish), where any `started` entry of the day counts, so a batch
+  that moved money and then failed, timed out or was interrupted still
+  counts; and the SDP itself, where any disbursement in `STARTED`, `PAUSED`
+  or `COMPLETED` whose `status_history` holds a `STARTED` entry dated today
+  counts (`internal/data/disbursements.go:27,59-63` at 7.0.0), whatever
+  machine or path started it. The local log is the record of reasons.
+
+A refusal prints every reason and exits with code 3.
+
+Every cap and guard above protects the `sdp:batch` path only. A
+disbursement started from the SDP dashboard or through its API bypasses
+the per-payment and per-batch caps, the STARTED and PAUSED guards and the
+run log. The one limit that holds whatever the path is how much the
+distribution account holds, so the operating rule for any run with real
+value is to fund the account per batch, up to that batch's total, rather
+than to rely on the ceiling.
+
 ## What is out of scope
 
 Mainnet; production signing or custody; a persistent signer (the

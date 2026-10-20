@@ -229,6 +229,10 @@ export interface Disbursement {
   registration_contact_type?: string;
   /** Payment rows of the disbursement (internal/data/disbursements.go:43). */
   total_payments?: number;
+  /** Every status the disbursement went through, with its time (internal/data/disbursements.go:27,59-63). */
+  status_history?: Array<{ user_id?: string; status: string; timestamp: string }>;
+  created_at?: string;
+  updated_at?: string;
   [key: string]: unknown;
 }
 
@@ -582,29 +586,54 @@ export class SdpTenantClient {
   }
 
   /**
-   * GET /payments, one page. page_limit defaults to 20 and is capped at 100
-   * (validators/query_validator.go:23-24); there is no disbursement filter
-   * (internal/data/payments.go:69), so callers filter and must page.
+   * GET /disbursements, optionally filtered by status (route serve.go:470,489;
+   * handler disbursement_handler.go:310-354). The `status` query key
+   * (data/query_params.go:44) takes a comma separated list, case
+   * insensitive (validators/disbursement_query_validator.go:55-69). One
+   * page; the tenants this bridge serves hold a handful of disbursements.
    */
   /**
-   * GET /payments. `page` and `page_limit` (query_validator.go:29-30 at
-   * 7.0.0, page_limit at most 100, :93-94); `sort` is `created_at` or
-   * `updated_at` (internal/data/payments.go:70, AllowedPaymentSorts; the
-   * default is updated_at descending, :67) and `direction` is `asc` or
-   * `desc` (query_validator.go:40-44).
+   * GET /disbursements, one page. `status` is a comma-separated list
+   * (validators/disbursement_query_validator.go:55-65 at 7.0.0); `page` and
+   * `page_limit` as for every listing (query_validator.go:29-30, default 20,
+   * at most 100, :23-24,93-94). Each disbursement carries `status_history`
+   * (internal/data/disbursements.go:27, entries :59-63).
    */
-  async listPayments(walletId?: string, page?: { page: number; pageLimit: number; sort?: 'created_at' | 'updated_at'; direction?: 'asc' | 'desc' }): Promise<Paginated<Payment>> {
+  async listDisbursements(filter: { status?: string[]; page?: number; pageLimit?: number } = {}, walletId?: string): Promise<Paginated<Disbursement>> {
     const q = new URLSearchParams();
-    if (page) {
-      q.set('page', String(page.page));
-      q.set('page_limit', String(page.pageLimit));
-      if (page.sort) q.set('sort', page.sort);
-      if (page.direction) q.set('direction', page.direction);
-    }
-    const qs = page ? `?${q.toString()}` : '';
+    if (filter.status?.length) q.set('status', filter.status.join(','));
+    if (filter.page !== undefined) q.set('page', String(filter.page));
+    if (filter.pageLimit !== undefined) q.set('page_limit', String(filter.pageLimit));
+    const query = q.toString();
     const res = await this.request({
       method: 'GET',
-      path: `/payments${qs}`,
+      path: `/disbursements${query ? `?${query}` : ''}`,
+      headers: this.headers(this.walletHeader(walletId)),
+    });
+    return json<Paginated<Disbursement>>(res);
+  }
+
+  /**
+   * GET /payments, one page. `status` takes ONE payment status
+   * (payment_query_validator.go:62-70 at 7.0.0, not a list); `page` and
+   * `page_limit` from query_validator.go:29-30, page_limit default 20 and at
+   * most 100 (query_validator.go:23-24,93-94); `sort` is `created_at` or
+   * `updated_at` (internal/data/payments.go:70, AllowedPaymentSorts; the
+   * default is updated_at descending, :67) and `direction` is `asc` or
+   * `desc` (query_validator.go:40-44); there is no disbursement filter
+   * (internal/data/payments.go:69), so callers filter and must page.
+   */
+  async listPayments(walletId?: string, filter: { status?: string; page?: number; pageLimit?: number; sort?: 'created_at' | 'updated_at'; direction?: 'asc' | 'desc' } = {}): Promise<Paginated<Payment>> {
+    const q = new URLSearchParams();
+    if (filter.status) q.set('status', filter.status);
+    if (filter.page !== undefined) q.set('page', String(filter.page));
+    if (filter.pageLimit !== undefined) q.set('page_limit', String(filter.pageLimit));
+    if (filter.sort) q.set('sort', filter.sort);
+    if (filter.direction) q.set('direction', filter.direction);
+    const query = q.toString();
+    const res = await this.request({
+      method: 'GET',
+      path: `/payments${query ? `?${query}` : ''}`,
       headers: this.headers(this.walletHeader(walletId)),
     });
     return json<Paginated<Payment>>(res);
