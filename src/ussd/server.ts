@@ -21,6 +21,7 @@ import {
   type AccountStore,
   type GatewayStep,
   type PinStore,
+  type Signer,
 } from 'stellar-ussd-sep10-adapter';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
@@ -33,6 +34,7 @@ import { closingLineFromEnv } from './closingLine.js';
 import { DEFAULT_CREATION_CAPS, createOnDial, type CreationCaps } from './createOnDial.js';
 import { handleBridgeStep, type BridgeMachineDeps } from './machine.js';
 import { maxClosingLineLength } from './screens.js';
+import { assertSigner } from '../signer/injected.js';
 
 export interface UssdServerConfig {
   callbackPath: string;
@@ -47,10 +49,20 @@ export interface UssdServerConfig {
   assetCode?: string;
   /** Closing line of screens 7 and 8; the contracted text when absent. */
   closingLine?: string;
-  /** Sponsor secret for creation on dial; required when createOnDial is true. */
+  /**
+   * Sponsor secret for creation on dial with the adapter's reference signer
+   * (the default); required when createOnDial is true and no signer is given.
+   */
   sponsorSecretKey?: string;
   /** Creation on dial caps; DEFAULT_CREATION_CAPS when omitted. */
   creationCaps?: CreationCaps;
+  /**
+   * A signer supplied from outside this repository (loadInjectedSigner),
+   * checked against the adapter's Signer interface at boot. With it,
+   * `sponsorPublicKey` names the sponsor and no secret is read.
+   */
+  signer?: Signer;
+  sponsorPublicKey?: string;
   legTimeoutMs?: number;
   sessionTtlMs?: number;
   log?: (line: string) => void;
@@ -107,6 +119,7 @@ export function ussdConfigFromEnv(env: Record<string, string | undefined>): Ussd
     closingLine,
     sponsorSecretKey: env.SPONSOR_SECRET_KEY,
     creationCaps,
+    sponsorPublicKey: env.SPONSOR_PUBLIC_KEY,
     sessionTtlMs: env.USSD_SESSION_TTL_MS ? Number(env.USSD_SESSION_TTL_MS) : undefined,
   };
 }
@@ -129,9 +142,19 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
 
   let createAccount: BridgeMachineDeps['createAccount'];
   if (cfg.createOnDial) {
-    if (!cfg.sponsorSecretKey) throw new Error('USSD_CREATE_ON_DIAL is on but SPONSOR_SECRET_KEY is not set');
-    const signer = new LocalKeypairSigner();
-    const sponsorPublicKey = signer.importSecret(cfg.sponsorSecretKey);
+    let signer: Signer;
+    let sponsorPublicKey: string;
+    if (cfg.signer) {
+      signer = assertSigner(cfg.signer, 'UssdServerConfig.signer');
+      if (!cfg.sponsorPublicKey) throw new Error('USSD_CREATE_ON_DIAL is on with an injected signer but SPONSOR_PUBLIC_KEY is not set');
+      sponsorPublicKey = cfg.sponsorPublicKey;
+    } else {
+      if (!cfg.sponsorSecretKey) throw new Error('USSD_CREATE_ON_DIAL is on but SPONSOR_SECRET_KEY is not set');
+      const local = new LocalKeypairSigner();
+      sponsorPublicKey = local.importSecret(cfg.sponsorSecretKey);
+      if (cfg.sponsorPublicKey && cfg.sponsorPublicKey !== sponsorPublicKey) throw new Error('SPONSOR_PUBLIC_KEY does not match SPONSOR_SECRET_KEY');
+      signer = local;
+    }
     // creation uses a longer deadline than a read: one Horizon submission
     const creationHorizon = new FetchHorizon(network.horizonUrl, { timeoutMs: 8_000 });
     // the same pending store the command line writes (pending.ts)

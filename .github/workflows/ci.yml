@@ -40,6 +40,11 @@ jobs:
 
       - run: npm run typecheck
 
+      # the scripts under scripts/ import dist/, and several tests spawn them;
+      # the test run itself also rebuilds dist/ (vitest globalSetup), so no
+      # test depends on another file having built it
+      - run: npm run build
+
       - run: npm test
 
       - name: secret scan

@@ -350,6 +350,29 @@ from Horizon and prints the table: recipient (masked), amount, status,
 transaction hash, ledger. Each recipient then sees the payment on their
 next dial. The run is recorded under `test-output/d4-batch/`.
 
+### Injecting a signer
+
+By default the bridge signs with the adapter's reference signer over
+`SPONSOR_SECRET_KEY`, which is testnet-only. A deployment may inject its
+own: set `BRIDGE_SIGNER_MODULE` to an ES module (a path relative to the
+working directory, an absolute path, or a package specifier) exporting
+`createSigner`, or a default export, that returns an object implementing
+the adapter's `Signer` interface (`createAccountKey`, `canSignFor`,
+`signTransaction`; `BRIDGE_SIGNER_EXPORT` picks another export name). At
+boot `npm run provision` and the USSD service import it and refuse, with
+exit code 2 and the missing member named, anything that does not implement
+the interface. With an injected signer `SPONSOR_PUBLIC_KEY` names the
+sponsor, the signer must report it can sign for that account, and
+`SPONSOR_SECRET_KEY` must be empty. Unless `BRIDGE_SIGNER_SELF_TEST=off`,
+the signer is also made to sign a throwaway envelope for the sponsor at
+boot (on by default on every network, since off testnet the injected
+signer is the deployment's real one and a wrong key must be caught at boot
+rather than at the first transaction), one
+ManageData operation with sequence number 0 and time bounds that ended at
+the epoch, so no ledger can accept it, and the signature is verified
+against `SPONSOR_PUBLIC_KEY`; the run is logged, the signature never. This
+repository adds no signer implementation; the tests use a fake.
+
 ### Caps and guards
 
 Three caps, enforced in the bridge because the SDP has no cap feature on

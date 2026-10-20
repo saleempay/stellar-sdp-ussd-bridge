@@ -36,8 +36,9 @@ import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import {
-  ClosingLineError, NetworkConfigError, assessDialReadiness, captureBanner, createUssdServer, describeExchange, normaliseHostname,
-  parseQuickTunnelHostname, readinessReport, recordingListener, tunnelCommand, tunnelConfigFromEnv, tunnelStartNotice, ussdConfigFromEnv, verifyHorizonNetwork,
+  ClosingLineError, NetworkConfigError, SignerConfigError, assessDialReadiness, captureBanner, createUssdServer, describeExchange,
+  loadInjectedSigner, normaliseHostname, parseQuickTunnelHostname, readinessReport, recordingListener, selfTestEnabled, sponsorSigning, tunnelCommand,
+  tunnelConfigFromEnv, tunnelStartNotice, ussdConfigFromEnv, verifyHorizonNetwork,
 } from '../dist/index.js';
 
 const args = process.argv.slice(2);
@@ -46,12 +47,26 @@ const flag = (n) => args.includes(n);
 const waitMinutes = Number(opt('--wait-minutes') ?? 30);
 const externalUrl = (opt('--tunnel-url') ?? process.env.TUNNEL_BASE_URL ?? '').replace(/\/+$/, '');
 let env;
-try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.env not found'); process.exit(2); }
+// one environment for every check: .env overlaid by the process environment
+try { env = { ...parseEnv(readFileSync('.env', 'utf8')), ...process.env }; } catch { console.error('.env not found'); process.exit(2); }
 let cfg;
 try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfigError || e instanceof ClosingLineError) { console.error(e.message); process.exit(2); } throw e; }
-if (!cfg.callbackPath) { console.error('USSD_CALLBACK_PATH is not set in .env (a long random segment, never printed)'); process.exit(2); }
 // Live half of the boot assertion: Horizon's root must report the configured passphrase.
-try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+// It runs before any signer module is loaded (fix round 3, 19 October 2026).
+// Ruling of 18 October 2026: when this fails, the readiness output names Horizon as the reason.
+try { await verifyHorizonNetwork(cfg.network); } catch (e) { console.error(`NOT READY TO DIAL: Horizon check failed, the service does not start: ${e instanceof NetworkConfigError ? e.message : String(e)}`); process.exit(2); }
+// Creation on dial signs with the adapter's reference signer by default, or
+// with a signer injected through BRIDGE_SIGNER_MODULE (checked at boot).
+if (cfg.createOnDial) {
+  try {
+    const selfTest = selfTestEnabled(env);
+    const signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase: cfg.network.networkPassphrase, selfTest });
+    cfg = { ...cfg, signer: signing.signer, sponsorPublicKey: signing.sponsorPublicKey, sponsorSecretKey: undefined };
+    console.log(`signer: ${signing.injected ? 'injected (BRIDGE_SIGNER_MODULE)' : 'adapter reference signer'}`);
+    if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : 'signer self-test: skipped (BRIDGE_SIGNER_SELF_TEST=off)');
+  } catch (e) { if (e instanceof SignerConfigError) { console.error(e.message); process.exit(2); } throw e; }
+}
+if (!cfg.callbackPath) { console.error('USSD_CALLBACK_PATH is not set in .env (a long random segment, never printed)'); process.exit(2); }
 let tunnelCfg;
 try { tunnelCfg = externalUrl ? { mode: 'external', hostname: normaliseHostname(externalUrl) } : tunnelConfigFromEnv(env); } catch (e) { console.error(e.message); process.exit(2); }
 

@@ -25,17 +25,21 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parseEnv } from 'node:util';
-import { JsonFileAccountStore, JsonFilePinStore, LocalKeypairSigner } from 'stellar-ussd-sep10-adapter';
+import { JsonFileAccountStore, JsonFilePinStore } from 'stellar-ussd-sep10-adapter';
 import {
   BridgeError,
   CapConfigError,
   FetchHorizon,
   JsonFilePendingStore,
   NetworkConfigError,
+  SignerConfigError,
   USDC_CODE,
   assertNetwork,
   assertSameNetwork,
   capsFromEnv,
+  loadInjectedSigner,
+  selfTestEnabled,
+  sponsorSigning,
   formatProvisionReport,
   maskAccount,
   parseInputCsv,
@@ -59,11 +63,11 @@ if (!input || !output) {
   process.exit(2);
 }
 
+// One environment for every check: .env overlaid by the process environment,
+// so the network assertion, the caps and the signer read the same values
+// (review of 13 October, pull request #10, finding 2).
 let env;
-try { env = parseEnv(readFileSync('.env', 'utf8')); } catch { console.error('.env not found; run npm run sponsor:setup first'); process.exit(2); }
-for (const k of ['SPONSOR_PUBLIC_KEY', 'SPONSOR_SECRET_KEY']) {
-  if (!env[k]) { console.error(`${k} missing in .env`); process.exit(2); }
-}
+try { env = { ...parseEnv(readFileSync('.env', 'utf8')), ...process.env }; } catch { console.error('.env not found; run npm run sponsor:setup first'); process.exit(2); }
 // Boot assertion: testnet values must be the testnet constants; any other
 // network needs every value supplied and BRIDGE_ACKNOWLEDGE_REAL_FUNDS=yes.
 let network;
@@ -87,7 +91,7 @@ const asset = { code: env.ASSET_CODE || USDC_CODE, issuer: network.assetIssuer }
 // Caps (MAX_PAYMENT_USDC, MAX_BATCH_USDC; defaults 5 and 25) are applied to
 // the file before anything is created or written.
 let caps;
-try { caps = capsFromEnv({ ...env, ...process.env }); } catch (e) { console.error(e instanceof CapConfigError ? e.message : String(e)); process.exit(2); }
+try { caps = capsFromEnv(env); } catch (e) { console.error(e instanceof CapConfigError ? e.message : String(e)); process.exit(2); }
 let rows;
 try {
   rows = parseInputCsv(readFileSync(input, 'utf8'), { allowPinColumn, caps });
@@ -96,9 +100,33 @@ try {
   process.exit(2);
 }
 
-const signer = new LocalKeypairSigner();
-const sponsorPublicKey = signer.importSecret(env.SPONSOR_SECRET_KEY);
-if (sponsorPublicKey !== env.SPONSOR_PUBLIC_KEY) { console.error('SPONSOR_PUBLIC_KEY does not match SPONSOR_SECRET_KEY'); process.exit(2); }
+// Live half of the boot assertion: Horizon's root must report the configured
+// passphrase. It runs before the signer is loaded (fix round 3, 19 October
+// 2026): "the network is accepted" means both halves, so a Horizon that
+// serves another network refuses the run before the deployment's module is
+// imported, its factory run or anything signed.
+// Live half of the boot assertion: Horizon's root must report the configured passphrase.
+try { await verifyHorizonNetwork(network, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
+
+// The signer comes last among the boot checks: the adapter's reference
+// signer over SPONSOR_SECRET_KEY by default, or one injected through
+// BRIDGE_SIGNER_MODULE (checked against the adapter's Signer interface;
+// SPONSOR_PUBLIC_KEY names the sponsor). A deployment's signer module is
+// the code that reaches out at import or construction (an HSM session, an
+// MPC service), so it is imported only after the network has been accepted
+// by both halves of the assertion, the real-funds acknowledgement checked
+// and the caps read (review of 13 October, pull request #10, finding 2;
+// completed in fix round 3).
+let signing;
+try {
+  const selfTest = selfTestEnabled(env);
+  signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase, selfTest });
+  if (signing.injected) console.log(signing.selfTested ? 'signer self-test: ran and passed (throwaway envelope, sequence 0, expired time bounds; the signature is not logged)' : 'signer self-test: skipped (BRIDGE_SIGNER_SELF_TEST=off)');
+} catch (e) {
+  console.error(e instanceof SignerConfigError ? e.message : String(e));
+  process.exit(2);
+}
+const { signer, sponsorPublicKey } = signing;
 mkdirSync(dataDir, { recursive: true });
 const deps = {
   horizon: new FetchHorizon(horizonUrl, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }),
@@ -113,9 +141,7 @@ const deps = {
   paymentIdPrefix: basename(input).replace(/\.csv$/i, ''),
 };
 
-// Live half of the boot assertion: Horizon's root must report the configured passphrase.
-try { await verifyHorizonNetwork(network, { timeoutMs: Number(env.HORIZON_TIMEOUT_MS || 15000) }); } catch (e) { console.error(e instanceof NetworkConfigError ? e.message : String(e)); process.exit(2); }
-console.log(`network ${network.networkType} (Horizon root confirms the passphrase), sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows within caps ${caps.maxPaymentUsdc}/${caps.maxBatchUsdc} USDC, data in ${dataDir}/`);
+console.log(`network ${network.networkType} (Horizon root confirms the passphrase), signer ${signing.injected ? 'injected' : 'adapter reference'}, sponsor ${maskAccount(sponsorPublicKey)}, asset ${asset.code}:${maskAccount(asset.issuer)}, ${rows.length} rows within caps ${caps.maxPaymentUsdc}/${caps.maxBatchUsdc} USDC, data in ${dataDir}/`);
 let report;
 try {
   report = await provisionRecipients(rows, deps);
