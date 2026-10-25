@@ -26,7 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes, randomInt, generateKeyPairSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
-import { NetworkConfigError, assertNetwork, composeEnvironment, dockerClientEnvironment, explorerAccountUrl, explorerTxUrl, postgresVolumeName as volumeNameFor, resolvePostgresVolume } from '../dist/index.js';
+import { ConfigError, NetworkConfigError, assertKeyLossAcknowledged, assertNetwork, composeEnvironment, dockerClientEnvironment, explorerAccountUrl, explorerTxUrl, networkTypeOf, postgresVolumeName as volumeNameFor, resolvePostgresVolume } from '../dist/index.js';
 
 const ENV_PATH = 'sdp/.env';
 const TEMPLATE_PATH = 'sdp/.env.example';
@@ -54,6 +54,23 @@ function postgresVolumeName() {
 }
 
 if (force) {
+  // --force replaces the current sdp/.env: the host distribution seed (the
+  // account that holds the funds under the ENV type), the SEP-10 seed, the
+  // two vault passphrases (every tenant key encrypted under them becomes
+  // unreadable), the admin key, the JWT secret, the EC key and the owner
+  // passwords. Off testnet, on either the file's network or the configured
+  // one, it needs BRIDGE_ACKNOWLEDGE_KEY_LOSS=yes; on testnet nothing changes.
+  const existing = existsSync(ENV_PATH) ? parseEnv(readFileSync(ENV_PATH, 'utf8')) : {};
+  let templateEnv = {};
+  try { templateEnv = parseEnv(readFileSync(TEMPLATE_PATH, 'utf8')); } catch { /* the missing template is reported below */ }
+  try {
+    assertKeyLossAcknowledged(
+      { ...existing, ...process.env },
+      'npm run sdp:accounts -- --force',
+      `the current ${ENV_PATH}: the host distribution seed (the account that holds the funds under the ENV type), the SEP-10 seed, the two vault passphrases (every tenant key encrypted under them becomes unreadable), the admin key, the JWT secret, the EC key and the owner passwords`,
+      [networkTypeOf(existing), networkTypeOf({ ...templateEnv, ...process.env })],
+    );
+  } catch (e) { if (e instanceof ConfigError) { console.error(e.message); process.exit(2); } throw e; }
   const volume = postgresVolumeName();
   // The guard allows --force only when the volume is positively absent.
   // Exit 0 means it exists. A stopped daemon or a missing binary also exits

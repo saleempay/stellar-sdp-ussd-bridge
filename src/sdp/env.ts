@@ -59,6 +59,32 @@ const TENANT_ACCOUNT_TYPES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** The configured tenant account type, the DB vault when unset; a ConfigError names the variable otherwise. */
+/**
+ * BRIDGE_ACKNOWLEDGE_KEY_LOSS: the acknowledgement that a destructive
+ * command (sdp:down --reset, sdp:accounts --force) may destroy the only
+ * copy of a key off testnet. On testnet nothing is asked. The message names
+ * what would be lost and never echoes a value.
+ */
+export const KEY_LOSS_ACK_ENV = 'BRIDGE_ACKNOWLEDGE_KEY_LOSS';
+
+export function keyLossAcknowledged(env: Record<string, string | undefined>): boolean {
+  return (env[KEY_LOSS_ACK_ENV] ?? '').trim().toLowerCase() === 'yes';
+}
+
+/**
+ * Refuse a destructive command off testnet unless acknowledged. `command`
+ * names the command for the message; `lost` names what it destroys. Every
+ * network type given is checked, so a command that touches two sources
+ * (the existing file and the configured network) passes both.
+ */
+export function assertKeyLossAcknowledged(env: Record<string, string | undefined>, command: string, lost: string, networkTypes: string[]): void {
+  const offTestnet = networkTypes.filter((t) => t !== TESTNET_NETWORK_TYPE);
+  if (offTestnet.length === 0 || keyLossAcknowledged(env)) return;
+  throw new ConfigError(
+    `${command} refused on network type ${[...new Set(offTestnet)].map((t) => `"${t}"`).join(' and ')}: it destroys ${lost}. On testnet this is cheap; here it may be the only copy of a key that holds funds. Set ${KEY_LOSS_ACK_ENV}=yes to proceed.`,
+  );
+}
+
 export function tenantAccountTypeFrom(env: Record<string, string | undefined>): string {
   const raw = (env[TENANT_ACCOUNT_TYPE_ENV] ?? '').trim();
   if (raw === '') return DISTRIBUTION_ACCOUNT_DB_VAULT;

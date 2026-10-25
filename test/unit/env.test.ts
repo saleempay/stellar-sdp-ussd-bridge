@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ConfigError, DOCKER_CLIENT_ENV, POSTGRES_VOLUME_ENV, composeEnvironment, dashboardUrlFor, dockerClientEnvironment, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv, tenantAccountTypeFrom } from '../../src/sdp/env.js';
+import { ConfigError, DOCKER_CLIENT_ENV, POSTGRES_VOLUME_ENV, assertKeyLossAcknowledged, composeEnvironment, keyLossAcknowledged, dashboardUrlFor, dockerClientEnvironment, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv, tenantAccountTypeFrom } from '../../src/sdp/env.js';
 import { TESTNET_RPC_URL } from '../../src/sdp/facts.js';
 import { NetworkConfigError } from '../../src/sdp/network.js';
 
@@ -246,5 +246,16 @@ describe('the scope test tenant is optional, and ENV allows one tenant only', ()
     try { sdpConfigFromEnv({ ...one, SCOPETEST_TENANT_NAME: 'scopetest' }); } catch (e) { err = e; }
     expect(err).toBeInstanceOf(ConfigError);
     expect((err as Error).message).toContain('missing in sdp/.env: SCOPETEST_OWNER_EMAIL, SCOPETEST_OWNER_PASSWORD');
+  });
+});
+
+describe('assertKeyLossAcknowledged', () => {
+  it('passes on testnet, passes off testnet with yes (any case, trimmed), refuses off testnet otherwise and names the command, the loss and the variable', () => {
+    expect(() => assertKeyLossAcknowledged({}, 'cmd', 'the thing', ['testnet'])).not.toThrow();
+    expect(() => assertKeyLossAcknowledged({ BRIDGE_ACKNOWLEDGE_KEY_LOSS: ' YES ' }, 'cmd', 'the thing', ['othernet'])).not.toThrow();
+    expect(() => assertKeyLossAcknowledged({ BRIDGE_ACKNOWLEDGE_KEY_LOSS: 'no' }, 'cmd', 'the thing', ['othernet'])).toThrow(ConfigError);
+    expect(() => assertKeyLossAcknowledged({}, 'cmd', 'the thing', ['testnet', 'othernet'])).toThrow(/cmd refused on network type "othernet": it destroys the thing\. .*BRIDGE_ACKNOWLEDGE_KEY_LOSS=yes/);
+    expect(keyLossAcknowledged({ BRIDGE_ACKNOWLEDGE_KEY_LOSS: 'yes' })).toBe(true);
+    expect(keyLossAcknowledged({})).toBe(false);
   });
 });
