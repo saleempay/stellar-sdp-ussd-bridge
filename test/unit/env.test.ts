@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ConfigError, DOCKER_CLIENT_ENV, POSTGRES_VOLUME_ENV, composeEnvironment, dashboardUrlFor, dockerClientEnvironment, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv, tenantAccountTypeFrom } from '../../src/sdp/env.js';
+import { ConfigError, DOCKER_CLIENT_ENV, POSTGRES_VOLUME_ENV, assertKeyLossAcknowledged, composeEnvironment, keyLossAcknowledged, dashboardUrlFor, dockerClientEnvironment, postgresVolumeName, readinessConfigFor, resolvePostgresVolume, sdpConfigFromEnv, tenantAccountTypeFrom } from '../../src/sdp/env.js';
 import { TESTNET_RPC_URL } from '../../src/sdp/facts.js';
 import { NetworkConfigError } from '../../src/sdp/network.js';
 
@@ -203,9 +203,59 @@ describe('SDP_TENANT_ACCOUNT_TYPE', () => {
   });
 
   it('is read into the config and threaded into the readiness config of every tenant', () => {
-    const cfg = sdpConfigFromEnv({ ...full, SDP_TENANT_ACCOUNT_TYPE: 'ENV' });
-    expect(cfg.tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
-    for (const t of cfg.tenants) expect(readinessConfigFor(cfg, t).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    const vault = sdpConfigFromEnv({ ...full, SDP_TENANT_ACCOUNT_TYPE: 'DB_VAULT' });
+    expect(vault.tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+    for (const t of vault.tenants) expect(readinessConfigFor(vault, t).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+    const { SCOPETEST_TENANT_NAME: _n, SCOPETEST_OWNER_EMAIL: _e, SCOPETEST_OWNER_PASSWORD: _p, ...one } = full;
+    const env = sdpConfigFromEnv({ ...one, SDP_TENANT_ACCOUNT_TYPE: 'ENV' });
+    expect(env.tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    expect(readinessConfigFor(env, env.tenants[0]!).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
     expect(sdpConfigFromEnv(full).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+  });
+});
+
+describe('the scope test tenant is optional, and ENV allows one tenant only', () => {
+  const { SCOPETEST_TENANT_NAME: _n, SCOPETEST_OWNER_EMAIL: _e, SCOPETEST_OWNER_PASSWORD: _p, ...one } = full;
+
+  it('ENV with two tenants is refused at configuration time, naming SCOPETEST_TENANT_NAME, before any SDP call', () => {
+    let err: unknown;
+    try { sdpConfigFromEnv({ ...full, SDP_TENANT_ACCOUNT_TYPE: 'ENV' }); } catch (e) { err = e; }
+    expect(err).toBeInstanceOf(ConfigError);
+    expect((err as Error).message).toMatch(/SDP_TENANT_ACCOUNT_TYPE=ENV puts every tenant on the host account/);
+    expect((err as Error).message).toContain('SCOPETEST_TENANT_NAME');
+    expect((err as Error).message).not.toContain('p2');
+  });
+
+  it('ENV with one tenant builds a config with that tenant only, typed ENV', () => {
+    const cfg = sdpConfigFromEnv({ ...one, SDP_TENANT_ACCOUNT_TYPE: 'ENV' });
+    expect(cfg.tenants.map((t) => t.name)).toEqual(['bridge']);
+    expect(cfg.tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+    expect(readinessConfigFor(cfg, cfg.tenants[0]!).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.ENV');
+  });
+
+  it('DB_VAULT with two tenants is unchanged, and the default is still DB_VAULT', () => {
+    const two = sdpConfigFromEnv({ ...full, SDP_TENANT_ACCOUNT_TYPE: 'DB_VAULT' });
+    expect(two.tenants.map((t) => t.name)).toEqual(['bridge', 'scopetest']);
+    expect(sdpConfigFromEnv(full).tenantAccountType).toBe('DISTRIBUTION_ACCOUNT.STELLAR.DB_VAULT');
+    expect(sdpConfigFromEnv(full).tenants).toHaveLength(2);
+  });
+
+  it('with no SCOPETEST_* value there is one tenant; a partial set is refused naming the gaps and no value', () => {
+    expect(sdpConfigFromEnv(one).tenants.map((t) => t.name)).toEqual(['bridge']);
+    let err: unknown;
+    try { sdpConfigFromEnv({ ...one, SCOPETEST_TENANT_NAME: 'scopetest' }); } catch (e) { err = e; }
+    expect(err).toBeInstanceOf(ConfigError);
+    expect((err as Error).message).toContain('missing in sdp/.env: SCOPETEST_OWNER_EMAIL, SCOPETEST_OWNER_PASSWORD');
+  });
+});
+
+describe('assertKeyLossAcknowledged', () => {
+  it('passes on testnet, passes off testnet with yes (any case, trimmed), refuses off testnet otherwise and names the command, the loss and the variable', () => {
+    expect(() => assertKeyLossAcknowledged({}, 'cmd', 'the thing', ['testnet'])).not.toThrow();
+    expect(() => assertKeyLossAcknowledged({ BRIDGE_ACKNOWLEDGE_KEY_LOSS: ' YES ' }, 'cmd', 'the thing', ['othernet'])).not.toThrow();
+    expect(() => assertKeyLossAcknowledged({ BRIDGE_ACKNOWLEDGE_KEY_LOSS: 'no' }, 'cmd', 'the thing', ['othernet'])).toThrow(ConfigError);
+    expect(() => assertKeyLossAcknowledged({}, 'cmd', 'the thing', ['testnet', 'othernet'])).toThrow(/cmd refused on network type "othernet": it destroys the thing\. .*BRIDGE_ACKNOWLEDGE_KEY_LOSS=yes/);
+    expect(keyLossAcknowledged({ BRIDGE_ACKNOWLEDGE_KEY_LOSS: 'yes' })).toBe(true);
+    expect(keyLossAcknowledged({})).toBe(false);
   });
 });
