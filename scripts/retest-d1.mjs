@@ -45,6 +45,7 @@ async function login(tenant) {
   return c.authenticate(tenant.ownerEmail, tenant.ownerPassword, { mfaCode: promptMfaCode() });
 }
 const [bridgeSpec, scopeSpec] = cfg.tenants;
+if (!scopeSpec) { console.error('the receiver scoping retest needs the scope test tenant: set SCOPETEST_TENANT_NAME, SCOPETEST_OWNER_EMAIL and SCOPETEST_OWNER_PASSWORD in sdp/.env (testnet, DB vault type)'); process.exit(2); }
 const bridge = await login(bridgeSpec);
 const other = await login(scopeSpec);
 

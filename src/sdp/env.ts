@@ -47,7 +47,8 @@ function required(env: EnvMap, keys: string[]): void {
  *             manager.go:168-172,224-226)
  * The type cannot change after the tenant exists (SDP advanced configuration
  * page), so the readiness step refuses an existing tenant of another type.
- * The one value applies to every tenant the readiness step provisions.
+ * Under ENV only one tenant may be configured (the scope test tenant is
+ * optional and must be absent), refused at configuration time.
  */
 export const TENANT_ACCOUNT_TYPE_ENV = 'SDP_TENANT_ACCOUNT_TYPE';
 const TENANT_ACCOUNT_TYPES: Readonly<Record<string, string>> = Object.freeze({
@@ -58,6 +59,32 @@ const TENANT_ACCOUNT_TYPES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** The configured tenant account type, the DB vault when unset; a ConfigError names the variable otherwise. */
+/**
+ * BRIDGE_ACKNOWLEDGE_KEY_LOSS: the acknowledgement that a destructive
+ * command (sdp:down --reset, sdp:accounts --force) may destroy the only
+ * copy of a key off testnet. On testnet nothing is asked. The message names
+ * what would be lost and never echoes a value.
+ */
+export const KEY_LOSS_ACK_ENV = 'BRIDGE_ACKNOWLEDGE_KEY_LOSS';
+
+export function keyLossAcknowledged(env: Record<string, string | undefined>): boolean {
+  return (env[KEY_LOSS_ACK_ENV] ?? '').trim().toLowerCase() === 'yes';
+}
+
+/**
+ * Refuse a destructive command off testnet unless acknowledged. `command`
+ * names the command for the message; `lost` names what it destroys. Every
+ * network type given is checked, so a command that touches two sources
+ * (the existing file and the configured network) passes both.
+ */
+export function assertKeyLossAcknowledged(env: Record<string, string | undefined>, command: string, lost: string, networkTypes: string[]): void {
+  const offTestnet = networkTypes.filter((t) => t !== TESTNET_NETWORK_TYPE);
+  if (offTestnet.length === 0 || keyLossAcknowledged(env)) return;
+  throw new ConfigError(
+    `${command} refused on network type ${[...new Set(offTestnet)].map((t) => `"${t}"`).join(' and ')}: it destroys ${lost}. On testnet this is cheap; here it may be the only copy of a key that holds funds. Set ${KEY_LOSS_ACK_ENV}=yes to proceed.`,
+  );
+}
+
 export function tenantAccountTypeFrom(env: Record<string, string | undefined>): string {
   const raw = (env[TENANT_ACCOUNT_TYPE_ENV] ?? '').trim();
   if (raw === '') return DISTRIBUTION_ACCOUNT_DB_VAULT;
@@ -216,16 +243,16 @@ export const assertSenderForNetwork = assertStackSettingsForNetwork;
  * evidence.
  */
 export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
-  required(env, [
-    'ADMIN_ACCOUNT',
-    'ADMIN_API_KEY',
-    'BRIDGE_TENANT_NAME',
-    'BRIDGE_OWNER_EMAIL',
-    'BRIDGE_OWNER_PASSWORD',
-    'SCOPETEST_TENANT_NAME',
-    'SCOPETEST_OWNER_EMAIL',
-    'SCOPETEST_OWNER_PASSWORD',
-  ]);
+  required(env, ['ADMIN_ACCOUNT', 'ADMIN_API_KEY', 'BRIDGE_TENANT_NAME', 'BRIDGE_OWNER_EMAIL', 'BRIDGE_OWNER_PASSWORD']);
+  // The scope test tenant is optional: it exists for the Deliverable 1
+  // receiver-scoping evidence only. Either all three of its values are set,
+  // or none; a partial set is a mistake and is refused naming the gaps.
+  const scopeKeys = ['SCOPETEST_TENANT_NAME', 'SCOPETEST_OWNER_EMAIL', 'SCOPETEST_OWNER_PASSWORD'];
+  const scopeSet = scopeKeys.filter((k) => env[k] && env[k]!.trim() !== '');
+  if (scopeSet.length > 0 && scopeSet.length < scopeKeys.length) {
+    throw new ConfigError(`the scope test tenant needs all of ${scopeKeys.join(', ')} or none of them; missing in sdp/.env: ${scopeKeys.filter((k) => !scopeSet.includes(k)).join(', ')}`);
+  }
+  const scopeTenant = scopeSet.length === scopeKeys.length;
   const port = env.PORT ?? '8000';
   const adminPort = env.ADMIN_PORT ?? '8003';
   const network = assertNetwork(env);
@@ -233,6 +260,15 @@ export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
   const rpcUrl = assertRpcForNetwork(env, network);
   const testnet = network.networkType === TESTNET_NETWORK_TYPE;
   const tenantAccountType = tenantAccountTypeFrom(env);
+  // ENV puts every tenant the readiness step creates on the one host
+  // account (the SDP refuses nothing here: tenant_validator.go:87-93,
+  // manager.go:224-226 at 7.0.0). Under ENV there is one tenant, refused at
+  // configuration time, before any SDP call.
+  if (tenantAccountType === DISTRIBUTION_ACCOUNT_ENV && scopeTenant) {
+    throw new ConfigError(
+      `${TENANT_ACCOUNT_TYPE_ENV}=ENV puts every tenant on the host account, so only one tenant may be configured: remove SCOPETEST_TENANT_NAME (with SCOPETEST_OWNER_EMAIL and SCOPETEST_OWNER_PASSWORD; the scope test tenant exists for the Deliverable 1 evidence only) or use DB_VAULT`,
+    );
+  }
   return {
     network,
     rpcUrl,
@@ -251,12 +287,14 @@ export function sdpConfigFromEnv(env: EnvMap): SdpEnvConfig {
         ownerEmail: env.BRIDGE_OWNER_EMAIL!,
         ownerPassword: env.BRIDGE_OWNER_PASSWORD!,
       },
-      {
-        name: env.SCOPETEST_TENANT_NAME!,
-        organizationName: env.SCOPETEST_ORGANIZATION_NAME ?? 'Scope test tenant',
-        ownerEmail: env.SCOPETEST_OWNER_EMAIL!,
-        ownerPassword: env.SCOPETEST_OWNER_PASSWORD!,
-      },
+      ...(scopeTenant
+        ? [{
+            name: env.SCOPETEST_TENANT_NAME!,
+            organizationName: env.SCOPETEST_ORGANIZATION_NAME ?? 'Scope test tenant',
+            ownerEmail: env.SCOPETEST_OWNER_EMAIL!,
+            ownerPassword: env.SCOPETEST_OWNER_PASSWORD!,
+          }]
+        : []),
     ],
   };
 }
