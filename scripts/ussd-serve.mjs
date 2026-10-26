@@ -32,6 +32,10 @@
  * only (docs/integration-guide.md, "Running the service on a persistent
  * volume, with no signer").
  *
+ * Stop (SIGTERM, SIGINT): readiness answers 503 at once, the listener
+ * closes 2 s later and in-flight callbacks complete; exit code 0 on a clean
+ * stop, 1 when the hard exit at 12 s had to end it.
+ *
  * Log: one line per event on stdout, prefixed with the time; the bridge's
  * events carry session ids, state names and error codes, never user input.
  */
@@ -107,14 +111,14 @@ const { listener } = createUssdServer({ ...cfg, log, ready: () => readiness.read
 const server = createServer((req, res) => {
   if (req.method === 'GET' && (req.url ?? '').split('?')[0] === readyPath) {
     const body = JSON.stringify({
-      ready: readiness.ready,
+      ready: readiness.ready && !stopping,
       reason: readiness.reason,
       checkedAt: readiness.checkedAt,
       network: cfg.network.networkType,
       createOnDial: cfg.createOnDial,
       signer: cfg.createOnDial ? (cfg.signer ? 'loaded' : 'reference') : 'none',
     });
-    res.writeHead(readiness.ready ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.writeHead(readiness.ready && !stopping ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(body);
     return;
   }
@@ -139,13 +143,25 @@ server.listen(port, '0.0.0.0', () => {
   log(`event=ready value=${readiness.ready}`);
 });
 
+// Stop: /ready answers 503 first so the load balancer deregisters the
+// task (callbacks in flight still run the machine), 2 s later the listener
+// closes (a callback may run up to the adapter's 8.5 s watchdog), and the process
+// exits 0 when the last connection is gone. A hard exit at 12 s (above the
+// drain plus the watchdog) ends a stop that did not complete, with exit
+// code 1 so the orchestrator can tell it from a clean stop.
+const DRAIN_MS = 2_000;
+const HARD_EXIT_MS = 12_000;
 const stop = (signal) => {
   if (stopping) return;
   stopping = true;
-  log(`event=stopping signal=${signal}`);
+  log(`event=stopping signal=${signal} drainMs=${DRAIN_MS}`);
   clearTimeout(recheck);
-  server.close(() => { log('event=stopped'); process.exit(0); });
-  setTimeout(() => process.exit(0), 5_000).unref();
+  // only the endpoint flips: callbacks still in flight run the machine
+  // during the drain, so a user mid-session gets a real screen, not E4
+  setTimeout(() => {
+    server.close(() => { log('event=stopped'); process.exit(0); });
+  }, DRAIN_MS).unref();
+  setTimeout(() => { log(`event=stopForced afterMs=${HARD_EXIT_MS}`); process.exit(1); }, HARD_EXIT_MS).unref();
 };
 process.on('SIGTERM', () => stop('SIGTERM'));
 process.on('SIGINT', () => stop('SIGINT'));

@@ -4,11 +4,14 @@
  * screen 1, other paths get the adapter's 404, SIGTERM stops it cleanly, and
  * every Horizon check failure at boot (no answer, transport error, HTML 200,
  * 404, another network's passphrase) refuses the start with exit code 2
- * before the listener opens, as the capture script does.
+ * before the listener opens, as the capture script does. On SIGTERM the
+ * readiness endpoint answers 503 first and a slow in-flight callback still
+ * completes before the clean exit.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -145,6 +148,28 @@ describe('scripts/ussd-serve.mjs', () => {
     expect(s.out.some((l) => l.includes('(ready again)'))).toBe(true);
     s.child.kill('SIGTERM');
     expect(await s.exit).toBe(0);
+  });
+
+  it('on SIGTERM readiness answers 503 at once and a slow in-flight callback completes before the clean exit', async () => {
+    const horizon = await fakeHorizon({ passphrase: OTHER_PASSPHRASE });
+    const s = await start(otherNetwork(horizon.url));
+    // a callback whose body arrives slowly: headers now, the body 3 s later, across the 2 s drain and the close
+    const body = new URLSearchParams({ sessionId: 's-serve-slow', phoneNumber: '+999700000001', networkCode: '99999', serviceCode: '*384*0#', text: '' }).toString();
+    const socket = connect(s.port, '127.0.0.1');
+    const reply = new Promise<string>((resolve) => { let data = ''; socket.on('data', (d) => { data += String(d); }); socket.on('close', () => resolve(data)); });
+    await new Promise<void>((r) => socket.once('connect', r));
+    socket.write(`POST ${CALLBACK} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n`);
+    await new Promise((r) => setTimeout(r, 200));
+    s.child.kill('SIGTERM');
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await fetch(`http://127.0.0.1:${s.port}/ready`)).status).toBe(503);
+    await new Promise((r) => setTimeout(r, 2_500));
+    socket.write(body);
+    const answer = await reply;
+    expect(answer).toContain('CON Saleem\n1. My account\n2. About');
+    expect(await s.exit).toBe(0);
+    expect(s.out.some((l) => l.includes('event=stopped'))).toBe(true);
+    expect(s.out.some((l) => l.includes('event=stopForced'))).toBe(false);
   });
 
   it('a passphrase of another network after the start exits with code 2', async () => {
