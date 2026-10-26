@@ -272,6 +272,17 @@ every recipient sets one again on the next dial (the account record, not
 the PIN, is what binds a number). The files are personal data: encrypt
 the volume at rest and delete it when the deployment ends.
 
+Run exactly one replica, and stop it before the next one starts. The JSON
+stores are single-process (the adapter's `jsonFileStore.ts` says so: each
+write replaces the whole file from what that process last read) and USSD
+sessions live in the memory of the process that opened them, so two
+replicas on one volume, or a rolling deploy that starts the new task
+before the old one has stopped, race the PIN failure counters (a lockout
+can be undone by the other process's write) and split a session across
+processes. A deployment's service definition must say one task, with a
+deployment that stops before it starts; the 2 s drain and the 12 s hard
+exit of the stop path are sized for that order.
+
 Seeding the account store from a run made elsewhere, step by step:
 
 1. On the operator machine, `npm run provision` writes `data/accounts.json`
@@ -394,7 +405,14 @@ The callback path is a capability credential: long, random, in `.env`
 only, shown masked. `USSD_ALLOWED_CIDRS` adds an IP allowlist from your
 gateway's source addresses (Africa's Talking does not sign callbacks; the
 three addresses it stated on 12 October 2026 are listed under "Run the
-USSD service" above). Session records keep PIN positions masked (`####`).
+USSD service" above). The allow-list reads the connecting socket's
+address, so it works only when the service is exposed directly: behind a
+load balancer, a tunnel or any proxy, every callback arrives from the
+proxy's address, the three `/32` entries refuse all of them, and adding
+the proxy's range admits everyone. Behind a load balancer leave
+`USSD_ALLOWED_CIDRS` empty and put the allow-list on the load balancer or
+its security group, where the gateway's addresses are still visible.
+Session records keep PIN positions masked (`####`).
 
 ## 4. Fund the distribution account and start the batch
 
