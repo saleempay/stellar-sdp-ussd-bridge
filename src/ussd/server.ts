@@ -33,7 +33,7 @@ import { loadAccountView } from './accountView.js';
 import { closingLineFromEnv } from './closingLine.js';
 import { DEFAULT_CREATION_CAPS, createOnDial, type CreationCaps } from './createOnDial.js';
 import { handleBridgeStep, type BridgeMachineDeps } from './machine.js';
-import { maxClosingLineLength } from './screens.js';
+import { SCREENS, maxClosingLineLength } from './screens.js';
 import { assertSigner } from '../signer/injected.js';
 
 export interface UssdServerConfig {
@@ -65,6 +65,13 @@ export interface UssdServerConfig {
   sponsorPublicKey?: string;
   legTimeoutMs?: number;
   sessionTtlMs?: number;
+  /**
+   * Readiness of the service, read on every callback after the adapter's
+   * path and allow-list checks. While it answers false the machine does not
+   * run and the callback gets E4, the service-down END screen (its existing
+   * text). Absent: always ready.
+   */
+  ready?: () => boolean;
   log?: (line: string) => void;
 }
 
@@ -183,7 +190,7 @@ export function createUssdServer(cfg: UssdServerConfig): UssdServer {
     sessions,
     callbackPath: cfg.callbackPath,
     allowedCidrs: cfg.allowedCidrs ? parseCidrList(cfg.allowedCidrs) : undefined,
-    handle: (step: GatewayStep) => handleBridgeStep(machine, step),
+    handle: (step: GatewayStep) => (cfg.ready && !cfg.ready() ? Promise.resolve(SCREENS.endServiceDown()) : handleBridgeStep(machine, step)),
     log,
   });
   return { listener, machine };

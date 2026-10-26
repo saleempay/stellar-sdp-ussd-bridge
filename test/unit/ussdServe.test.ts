@@ -79,9 +79,11 @@ async function start(extraEnv: Record<string, string>, opts: { waitForListening?
   return { child, port, out, err, exit };
 }
 
+// each dial is its own gateway session: the adapter replays a cached reply for a repeated (session, text)
+let dials = 0;
 const dial = (port: number) => fetch(`http://127.0.0.1:${port}${CALLBACK}`, {
   method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-  body: new URLSearchParams({ sessionId: 's-serve-1', phoneNumber: '+999700000001', networkCode: '99999', serviceCode: '*384*0#', text: '' }).toString(),
+  body: new URLSearchParams({ sessionId: `s-serve-${++dials}`, phoneNumber: '+999700000001', networkCode: '99999', serviceCode: '*384*0#', text: '' }).toString(),
 });
 
 describe('scripts/ussd-serve.mjs', () => {
@@ -121,6 +123,38 @@ describe('scripts/ussd-serve.mjs', () => {
     it('a timeout (the root never answers)', async () => refused((await fakeHorizon('hang')).url, /did not answer \(TimeoutError\)/));
   });
 
+  it('keeps checking while ready: a failing check gives 503 and the service-down END screen on the callback, a passing one gives 200 again', async () => {
+    const horizon = await fakeHorizon({ passphrase: OTHER_PASSPHRASE });
+    const s = await start(otherNetwork(horizon.url));
+    expect((await fetch(`http://127.0.0.1:${s.port}/ready`)).status).toBe(200);
+    const readyStatus = async () => (await fetch(`http://127.0.0.1:${s.port}/ready`)).status;
+    const until = async (status: number) => {
+      const deadline = Date.now() + 10_000;
+      while ((await readyStatus()) !== status && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+      return readyStatus();
+    };
+    horizon.set('down');
+    expect(await until(503)).toBe(503);
+    const screen = await dial(s.port);
+    expect(screen.status).toBe(200);
+    expect(await screen.text()).toBe('END Service unavailable.\nPlease try again later.');
+    horizon.set({ passphrase: OTHER_PASSPHRASE });
+    expect(await until(200)).toBe(200);
+    expect(await (await dial(s.port)).text()).toBe('CON Saleem\n1. My account\n2. About');
+    expect(s.out.some((l) => l.includes('event=horizonCheck result=failed'))).toBe(true);
+    expect(s.out.some((l) => l.includes('(ready again)'))).toBe(true);
+    s.child.kill('SIGTERM');
+    expect(await s.exit).toBe(0);
+  });
+
+  it('a passphrase of another network after the start exits with code 2', async () => {
+    const horizon = await fakeHorizon({ passphrase: OTHER_PASSPHRASE });
+    const s = await start(otherNetwork(horizon.url));
+    horizon.set({ passphrase: 'Test SDF Network ; September 2015' });
+    expect(await s.exit).toBe(2);
+    expect(s.err.join('\n')).toMatch(/after the start, the service stops: .*serves a different network/);
+  });
+
   it('refuses a ready path equal to the callback path, and a bad recheck interval', async () => {
     const horizon = await fakeHorizon({ passphrase: OTHER_PASSPHRASE });
     const same = await start({ ...otherNetwork(horizon.url), USSD_READY_PATH: CALLBACK }, { waitForListening: false });
@@ -129,5 +163,8 @@ describe('scripts/ussd-serve.mjs', () => {
     const bad = await start({ ...otherNetwork(horizon.url), USSD_READY_RECHECK_MS: '5' }, { waitForListening: false });
     expect(await bad.exit).toBe(2);
     expect(bad.err.join('\n')).toContain('USSD_READY_RECHECK_MS');
+    const overflow = await start({ ...otherNetwork(horizon.url), USSD_READY_RECHECK_MS: '3000000000' }, { waitForListening: false });
+    expect(await overflow.exit).toBe(2);
+    expect(overflow.err.join('\n')).toContain('at most 3600000');
   });
 });
