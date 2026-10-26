@@ -1,0 +1,166 @@
+#!/usr/bin/env node
+/**
+ * The long-running USSD service: the bridge's listener on USSD_PORT, a
+ * readiness endpoint, a stdout log, a clean stop on SIGTERM. No tunnel, no
+ * recorder, no timer: the deployment's entrypoint (`npm run ussd:serve`
+ * after `npm run build`, or `node scripts/ussd-serve.mjs` in an image).
+ *
+ * Configuration: `.env` in the working directory when present, overlaid by
+ * the process environment (a container usually has no file). The boot
+ * assertion (network values, closing line) runs first and exits with
+ * code 2 on a refusal; then the live Horizon check (the Horizon root's
+ * network_passphrase against NETWORK_PASSPHRASE, L2), which gates the
+ * start as it does in the capture script: any failure (no answer, a
+ * transport error, an HTTP error status, a non-JSON answer, a root without
+ * the field, a passphrase of another network) is a configuration error
+ * with its own message and the process exits with code 2 before the signer
+ * is loaded and before the listener opens; the orchestrator restarts the
+ * task. The signer, when creation on dial is on (testnet only), is loaded
+ * only after the check passed. Once up, the check keeps running, every
+ * USSD_READY_RECHECK_MS (default 60 000, at most 3 600 000) after the
+ * previous one resolved, so checks never overlap: a failure to answer marks
+ * the service not ready, and while it is not ready every callback gets the
+ * service-down END screen instead of the machine; a passphrase of another
+ * network after the start exits with code 2.
+ *
+ * Readiness: GET USSD_READY_PATH (default /ready) answers 200 when the
+ * last Horizon check passed and the service is not stopping, 503 otherwise;
+ * the body carries ready, checkedAt and networkType only (the reason of a
+ * failure goes to the log), never the callback path, never a secret. Every other
+ * request goes to the adapter's listener, which answers the callback path
+ * only (docs/integration-guide.md, "Running the service on a persistent
+ * volume, with no signer").
+ *
+ * Stop (SIGTERM, SIGINT): readiness answers 503 at once, the listener
+ * closes 2 s later and in-flight callbacks complete; exit code 0 on a clean
+ * stop, 1 when the hard exit at 12 s had to end it.
+ *
+ * Log: one line per event on stdout, prefixed with the time; the bridge's
+ * events carry session ids, state names and error codes, never user input.
+ */
+import { createServer } from 'node:http';
+import { existsSync, readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
+import {
+  ClosingLineError, ConfigError, NetworkConfigError, SignerConfigError, assertCallbackPath, createUssdServer, loadInjectedSigner, selfTestEnabled,
+  sponsorSigning, ussdConfigFromEnv, verifyHorizonNetwork,
+} from '../dist/index.js';
+
+const log = (line) => console.log(`${new Date().toISOString()} ${line}`);
+const fail = (message) => { console.error(message); process.exit(2); };
+// the bridge's ConfigError, or the adapter's (code CONFIG_INVALID): a message, no stack trace
+const isConfigError = (e) => e instanceof ConfigError || (e instanceof Error && e.code === 'CONFIG_INVALID');
+
+const fileEnv = existsSync('.env') ? parseEnv(readFileSync('.env', 'utf8')) : {};
+const env = { ...fileEnv, ...process.env };
+
+let cfg;
+try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfigError || e instanceof ClosingLineError) fail(e.message); throw e; }
+// the callback path is validated here with the rest of the configuration,
+// not inside createUssdServer after the Horizon check and the signer load
+try { assertCallbackPath(cfg.callbackPath); } catch (e) { if (isConfigError(e)) fail(e.message); throw e; }
+
+const readyPath = (env.USSD_READY_PATH ?? '/ready').trim() || '/ready';
+if (!readyPath.startsWith('/')) fail('USSD_READY_PATH must start with a slash');
+if (readyPath === cfg.callbackPath) fail('USSD_READY_PATH must differ from USSD_CALLBACK_PATH');
+const MAX_RECHECK_MS = 3_600_000;
+const recheckMs = Number(env.USSD_READY_RECHECK_MS ?? 60_000);
+if (!Number.isFinite(recheckMs) || recheckMs < 1_000 || recheckMs > MAX_RECHECK_MS) fail(`USSD_READY_RECHECK_MS must be a number of milliseconds, at least 1000 and at most ${MAX_RECHECK_MS}`);
+const portText = (env.USSD_PORT ?? '8085').trim();
+const port = portText === '' ? NaN : Number(portText);
+if (!Number.isInteger(port) || port < 0 || port > 65_535) fail('USSD_PORT must be a port number (an empty value is refused)');
+
+// The live Horizon check gates the start, before any signer module is
+// loaded: every failure is a configuration error here (the capture script
+// does the same). After the start the same check feeds readiness.
+const readiness = { ready: false, reason: 'not checked yet', checkedAt: null };
+try {
+  await verifyHorizonNetwork(cfg.network);
+} catch (e) {
+  fail(`Horizon check failed, the service does not start: ${e instanceof NetworkConfigError ? e.message : String(e)}`);
+}
+readiness.ready = true; readiness.reason = null; readiness.checkedAt = new Date().toISOString();
+log(`event=horizonCheck result=ok network=${cfg.network.networkType}`);
+// After the start: the same check, repeated. A Horizon that stops
+// answering (or answers wrongly) marks the service not ready until a check
+// passes again; a passphrase of another network is a configuration change
+// under a running service and exits with code 2.
+const PASSPHRASE_MISMATCH = /serves a different network/;
+async function checkHorizon() {
+  try {
+    await verifyHorizonNetwork(cfg.network);
+    if (!readiness.ready) log(`event=horizonCheck result=ok network=${cfg.network.networkType} (ready again)`);
+    readiness.ready = true; readiness.reason = null; readiness.checkedAt = new Date().toISOString();
+  } catch (e) {
+    const message = e instanceof NetworkConfigError ? e.message : String(e);
+    if (PASSPHRASE_MISMATCH.test(message)) fail(`Horizon check failed after the start, the service stops: ${message}`);
+    if (readiness.ready) log('event=horizonCheck result=failed (not ready; callbacks get the service-down screen; the check runs again)');
+    readiness.ready = false; readiness.reason = message; readiness.checkedAt = new Date().toISOString();
+  }
+}
+
+let signerLine = 'signer: none (creation on dial off)';
+if (cfg.createOnDial) {
+  try {
+    const signing = await sponsorSigning(env, await loadInjectedSigner(env), { networkPassphrase: cfg.network.networkPassphrase, selfTest: selfTestEnabled(env) });
+    cfg = { ...cfg, signer: signing.signer, sponsorPublicKey: signing.sponsorPublicKey, sponsorSecretKey: undefined };
+    signerLine = `signer: ${signing.injected ? 'injected (BRIDGE_SIGNER_MODULE)' : 'adapter reference signer'}; self-test: ${signing.selfTested ? 'ran and passed' : 'skipped'}`;
+  } catch (e) { if (e instanceof SignerConfigError) fail(e.message); throw e; }
+}
+
+let stopping = false;
+let listener;
+try { ({ listener } = createUssdServer({ ...cfg, log, ready: () => readiness.ready })); } catch (e) { if (isConfigError(e)) fail(e.message); throw e; }
+
+const server = createServer((req, res) => {
+  if (req.method === 'GET' && (req.url ?? '').split('?')[0] === readyPath) {
+    // a terse public body: ready, the time of the last check and the network
+    // type; the reason, the signer and creation on dial stay in the log
+    const body = JSON.stringify({ ready: readiness.ready && !stopping, checkedAt: readiness.checkedAt, networkType: cfg.network.networkType });
+    res.writeHead(readiness.ready && !stopping ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(body);
+    return;
+  }
+  listener(req, res);
+});
+
+// A setTimeout chain, never setInterval: the next check is scheduled only
+// after the previous one resolved, so two checks never overlap and a slow
+// failing one cannot land after a later passing one.
+let recheck = null;
+const scheduleRecheck = () => {
+  recheck = setTimeout(async () => { await checkHorizon(); if (!stopping) scheduleRecheck(); }, recheckMs);
+  recheck.unref();
+};
+scheduleRecheck();
+
+server.listen(port, '0.0.0.0', () => {
+  const address = server.address();
+  const bound = typeof address === 'object' && address ? address.port : port;
+  log(`event=listening port=${bound} readyPath=${readyPath} network=${cfg.network.networkType} dataDir=${cfg.dataDir} createOnDial=${cfg.createOnDial ? 'on' : 'off'} callbackPath=set(${cfg.callbackPath.length} chars, masked)`);
+  log(signerLine);
+  log(`event=ready value=${readiness.ready}`);
+});
+
+// Stop: /ready answers 503 first so the load balancer deregisters the
+// task (callbacks in flight still run the machine), 2 s later the listener
+// closes (a callback may run up to the adapter's 8.5 s watchdog), and the process
+// exits 0 when the last connection is gone. A hard exit at 12 s (above the
+// drain plus the watchdog) ends a stop that did not complete, with exit
+// code 1 so the orchestrator can tell it from a clean stop.
+const DRAIN_MS = 2_000;
+const HARD_EXIT_MS = 12_000;
+const stop = (signal) => {
+  if (stopping) return;
+  stopping = true;
+  log(`event=stopping signal=${signal} drainMs=${DRAIN_MS}`);
+  clearTimeout(recheck);
+  // only the endpoint flips: callbacks still in flight run the machine
+  // during the drain, so a user mid-session gets a real screen, not E4
+  setTimeout(() => {
+    server.close(() => { log('event=stopped'); process.exit(0); });
+  }, DRAIN_MS).unref();
+  setTimeout(() => { log(`event=stopForced afterMs=${HARD_EXIT_MS}`); process.exit(1); }, HARD_EXIT_MS).unref();
+};
+process.on('SIGTERM', () => stop('SIGTERM'));
+process.on('SIGINT', () => stop('SIGINT'));

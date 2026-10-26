@@ -272,6 +272,17 @@ every recipient sets one again on the next dial (the account record, not
 the PIN, is what binds a number). The files are personal data: encrypt
 the volume at rest and delete it when the deployment ends.
 
+Run exactly one replica, and stop it before the next one starts. The JSON
+stores are single-process (the adapter's `jsonFileStore.ts` says so: each
+write replaces the whole file from what that process last read) and USSD
+sessions live in the memory of the process that opened them, so two
+replicas on one volume, or a rolling deploy that starts the new task
+before the old one has stopped, race the PIN failure counters (a lockout
+can be undone by the other process's write) and split a session across
+processes. A deployment's service definition must say one task, with a
+deployment that stops before it starts; the 2 s drain and the 12 s hard
+exit of the stop path are sized for that order.
+
 Seeding the account store from a run made elsewhere, step by step:
 
 1. On the operator machine, `npm run provision` writes `data/accounts.json`
@@ -290,18 +301,34 @@ Seeding the account store from a run made elsewhere, step by step:
    their first dial. If a `pins.json` exists from an earlier run of the
    same numbers, keep it only if those recipients are the same people.
 
-Health: the adapter's listener answers only the callback path; a load
-balancer health check that needs an HTTP 200 does not get one from another
-path, so use a TCP check on `USSD_PORT`, or a check that POSTs a
-well-formed gateway callback (the readiness probe in `ussd:capture` does
-exactly that against the public URL).
+The entrypoint of a long-running deployment is `npm run ussd:serve`
+(`scripts/ussd-serve.mjs`, after `npm run build`): the listener on
+`USSD_PORT`, one log line per event on stdout, a clean stop on SIGTERM, no
+tunnel, no recorder, no timer. It reads `.env` when present, overlaid by
+the process environment, runs the boot assertion, then the live Horizon
+check before any signer is loaded, and the check gates the start as it
+does in `ussd:capture`: a Horizon that does not answer, answers with a
+transport error, an HTTP error status or a non-JSON document, carries no
+`network_passphrase`, or serves another network stops the start with exit
+code 2 and a message naming which, before the listener opens; the
+orchestrator restarts the task. Once up, the check runs again every
+`USSD_READY_RECHECK_MS` (default 60 seconds) and readiness follows it.
 
-This repository ships the sandbox recorder, `npm run ussd:capture`, which
-starts a tunnel, records every request and stops after `--wait-minutes`;
-it is not the entrypoint of a long-running deployment. A deployment runs
-the listener from `createUssdServer(ussdConfigFromEnv(env))` (exported by
-the package) in its own entrypoint, without the tunnel and without the
-recorder.
+Readiness: `GET` on `USSD_READY_PATH` (default `/ready`) answers 200
+while the last Horizon check passed and the service is not stopping, 503
+otherwise; the body carries `ready`, `checkedAt` and `networkType` only
+(the reason of a failure goes to the log), never the callback path or a
+secret. While not ready, every callback gets E4, the service-down END
+screen, instead of the menu. Point the load balancer's health check at it.
+Every other request goes to the adapter's listener, which answers only the
+callback path. On SIGTERM the endpoint answers 503 at once, the listener
+closes 2 s later with in-flight callbacks completing, and the process
+exits 0; a hard exit at 12 s ends a stop that did not complete with exit
+code 1.
+
+`npm run ussd:capture` remains the sandbox recorder: it starts a tunnel,
+records every request and stops after `--wait-minutes`; it is not a
+deployment entrypoint.
 
 ### The account screen
 
@@ -378,7 +405,14 @@ The callback path is a capability credential: long, random, in `.env`
 only, shown masked. `USSD_ALLOWED_CIDRS` adds an IP allowlist from your
 gateway's source addresses (Africa's Talking does not sign callbacks; the
 three addresses it stated on 12 October 2026 are listed under "Run the
-USSD service" above). Session records keep PIN positions masked (`####`).
+USSD service" above). The allow-list reads the connecting socket's
+address, so it works only when the service is exposed directly: behind a
+load balancer, a tunnel or any proxy, every callback arrives from the
+proxy's address, the three `/32` entries refuse all of them, and adding
+the proxy's range admits everyone. Behind a load balancer leave
+`USSD_ALLOWED_CIDRS` empty and put the allow-list on the load balancer or
+its security group, where the gateway's addresses are still visible.
+Session records keep PIN positions masked (`####`).
 
 ## 4. Fund the distribution account and start the batch
 
