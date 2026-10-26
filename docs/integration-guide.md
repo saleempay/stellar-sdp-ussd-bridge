@@ -295,10 +295,13 @@ The entrypoint of a long-running deployment is `npm run ussd:serve`
 `USSD_PORT`, one log line per event on stdout, a clean stop on SIGTERM, no
 tunnel, no recorder, no timer. It reads `.env` when present, overlaid by
 the process environment, runs the boot assertion, then the live Horizon
-check before any signer is loaded: a Horizon that serves another network
-stops the start with exit code 2; a Horizon that does not answer lets the
-service start and readiness reports the failure until a later check
-passes (every `USSD_READY_RECHECK_MS`, default 60 seconds).
+check before any signer is loaded, and the check gates the start as it
+does in `ussd:capture`: a Horizon that does not answer, answers with a
+transport error, an HTTP error status or a non-JSON document, carries no
+`network_passphrase`, or serves another network stops the start with exit
+code 2 and a message naming which, before the listener opens; the
+orchestrator restarts the task. Once up, the check runs again every
+`USSD_READY_RECHECK_MS` (default 60 seconds) and readiness follows it.
 
 Readiness: `GET` on `USSD_READY_PATH` (default `/ready`) answers 200 with
 `{"ready":true}` while the last Horizon check passed and 503 with

@@ -1,9 +1,10 @@
 /**
  * scripts/ussd-serve.mjs, spawned as a deployment would: the readiness
  * endpoint follows the live Horizon check, the callback path still answers
- * screen 1, other paths get the adapter's 404, SIGTERM stops it cleanly, a
- * Horizon on another network refuses the start, and an unanswered Horizon
- * starts the service as not ready.
+ * screen 1, other paths get the adapter's 404, SIGTERM stops it cleanly, and
+ * every Horizon check failure at boot (no answer, transport error, HTML 200,
+ * 404, another network's passphrase) refuses the start with exit code 2
+ * before the listener opens, as the capture script does.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -27,16 +28,22 @@ const otherNetwork = (horizonUrl: string) => ({
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => { for (const c of cleanups.splice(0)) await c(); });
 
-async function fakeHorizon(passphrase: string | null): Promise<string> {
+type HorizonMode = { passphrase: string } | 'down' | 'html' | 'notFound' | 'hang';
+/** A fake Horizon root whose answer can be changed while it runs. */
+async function fakeHorizon(initial: HorizonMode): Promise<{ url: string; set: (m: HorizonMode) => void }> {
+  let mode = initial;
   const server: Server = createServer((_req, res) => {
-    if (passphrase === null) { res.writeHead(500); res.end('down'); return; }
+    if (mode === 'down') { res.writeHead(500); res.end('down'); return; }
+    if (mode === 'html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<html>landing page</html>'); return; }
+    if (mode === 'notFound') { res.writeHead(404); res.end('not found'); return; }
+    if (mode === 'hang') return; // never answers; the check times out
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ network_passphrase: passphrase }));
+    res.end(JSON.stringify({ network_passphrase: mode.passphrase }));
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   cleanups.push(() => new Promise<void>((r) => server.close(() => r())));
   const a = server.address();
-  return `http://127.0.0.1:${typeof a === 'object' && a ? a.port : 0}`;
+  return { url: `http://127.0.0.1:${typeof a === 'object' && a ? a.port : 0}`, set: (m) => { mode = m; } };
 }
 
 async function freePort(): Promise<number> {
@@ -79,8 +86,8 @@ const dial = (port: number) => fetch(`http://127.0.0.1:${port}${CALLBACK}`, {
 
 describe('scripts/ussd-serve.mjs', () => {
   it('starts, reports ready after a passing Horizon check, answers the callback, 404s other paths, stops on SIGTERM', async () => {
-    const horizon = await fakeHorizon(OTHER_PASSPHRASE);
-    const s = await start(otherNetwork(horizon));
+    const horizon = await fakeHorizon({ passphrase: OTHER_PASSPHRASE });
+    const s = await start(otherNetwork(horizon.url));
     const ready = await fetch(`http://127.0.0.1:${s.port}/ready`);
     expect(ready.status).toBe(200);
     const body = (await ready.json()) as Record<string, unknown>;
@@ -98,32 +105,28 @@ describe('scripts/ussd-serve.mjs', () => {
     expect(s.out.some((l) => l.includes('event=stopped'))).toBe(true);
   });
 
-  it('a Horizon that serves another network refuses the start with exit code 2, before listening', async () => {
-    const horizon = await fakeHorizon('Test SDF Network ; September 2015');
-    const s = await start(otherNetwork(horizon), { waitForListening: false });
-    expect(await s.exit).toBe(2);
-    expect(s.err.join('\n')).toMatch(/serves a different network/);
-    expect(s.out.some((l) => l.includes('event=listening'))).toBe(false);
-  });
-
-  it('a Horizon that does not answer starts the service as not ready, then ready once a check passes', async () => {
-    const horizon = await fakeHorizon(null);
-    const s = await start(otherNetwork(horizon));
-    const notReady = await fetch(`http://127.0.0.1:${s.port}/ready`);
-    expect(notReady.status).toBe(503);
-    expect(((await notReady.json()) as { ready: boolean; reason: string }).reason).toMatch(/answered HTTP 500/);
-    // the callback still answers (the gateway is not refused by a Horizon outage at the welcome step)
-    expect((await dial(s.port)).status).toBe(200);
-    s.child.kill('SIGTERM');
-    expect(await s.exit).toBe(0);
+  describe('every Horizon check failure at boot refuses the start with exit code 2, before the listener opens', () => {
+    const refused = async (horizonUrl: string, reason: RegExp) => {
+      const s = await start(otherNetwork(horizonUrl), { waitForListening: false });
+      expect(await s.exit).toBe(2);
+      expect(s.err.join('\n')).toContain('Horizon check failed, the service does not start');
+      expect(s.err.join('\n')).toMatch(reason);
+      expect(s.out.some((l) => l.includes('event=listening'))).toBe(false);
+      expect(s.out.some((l) => l.includes('signer:'))).toBe(false);
+    };
+    it('another network\'s passphrase', async () => refused((await fakeHorizon({ passphrase: 'Test SDF Network ; September 2015' })).url, /serves a different network/));
+    it('an HTML 200 (a landing page at a mistyped URL)', async () => refused((await fakeHorizon('html')).url, /did not answer with a JSON document/));
+    it('a 404', async () => refused((await fakeHorizon('notFound')).url, /answered HTTP 404/));
+    it('a transport error (nothing listens)', async () => refused(`http://127.0.0.1:${await freePort()}`, /did not answer \(/));
+    it('a timeout (the root never answers)', async () => refused((await fakeHorizon('hang')).url, /did not answer \(TimeoutError\)/));
   });
 
   it('refuses a ready path equal to the callback path, and a bad recheck interval', async () => {
-    const horizon = await fakeHorizon(OTHER_PASSPHRASE);
-    const same = await start({ ...otherNetwork(horizon), USSD_READY_PATH: CALLBACK }, { waitForListening: false });
+    const horizon = await fakeHorizon({ passphrase: OTHER_PASSPHRASE });
+    const same = await start({ ...otherNetwork(horizon.url), USSD_READY_PATH: CALLBACK }, { waitForListening: false });
     expect(await same.exit).toBe(2);
     expect(same.err.join('\n')).toContain('USSD_READY_PATH must differ');
-    const bad = await start({ ...otherNetwork(horizon), USSD_READY_RECHECK_MS: '5' }, { waitForListening: false });
+    const bad = await start({ ...otherNetwork(horizon.url), USSD_READY_RECHECK_MS: '5' }, { waitForListening: false });
     expect(await bad.exit).toBe(2);
     expect(bad.err.join('\n')).toContain('USSD_READY_RECHECK_MS');
   });

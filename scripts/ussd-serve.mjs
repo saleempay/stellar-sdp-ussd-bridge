@@ -9,13 +9,15 @@
  * the process environment (a container usually has no file). The boot
  * assertion (network values, closing line) runs first and exits with
  * code 2 on a refusal; then the live Horizon check (the Horizon root's
- * network_passphrase against NETWORK_PASSPHRASE, L2): a Horizon that
- * serves another network is a configuration error and the process exits
- * with code 2; a Horizon that does not answer lets the service start with
- * readiness reporting the failure, and the check runs again every
- * USSD_READY_RECHECK_MS (default 60 000) until it passes. The signer, when
- * creation on dial is on (testnet only), is loaded only after the Horizon
- * check, as in the capture script.
+ * network_passphrase against NETWORK_PASSPHRASE, L2), which gates the
+ * start as it does in the capture script: any failure (no answer, a
+ * transport error, an HTTP error status, a non-JSON answer, a root without
+ * the field, a passphrase of another network) is a configuration error
+ * with its own message and the process exits with code 2 before the signer
+ * is loaded and before the listener opens; the orchestrator restarts the
+ * task. The signer, when creation on dial is on (testnet only), is loaded
+ * only after the check passed. Once up, the check runs again every
+ * USSD_READY_RECHECK_MS (default 60 000) and readiness follows it.
  *
  * Readiness: GET USSD_READY_PATH (default /ready) answers 200 with
  * {"ready":true,...} when the last Horizon check passed and 503 with
@@ -55,10 +57,18 @@ if (!Number.isFinite(recheckMs) || recheckMs < 1_000) fail('USSD_READY_RECHECK_M
 const port = Number(env.USSD_PORT ?? 8085);
 if (!Number.isInteger(port) || port < 0 || port > 65_535) fail('USSD_PORT must be a port number');
 
-// The live Horizon check, before any signer module is loaded. A mismatch
-// is a configuration error; an unanswered Horizon is reported by readiness.
+// The live Horizon check gates the start, before any signer module is
+// loaded: every failure is a configuration error here (the capture script
+// does the same). After the start the same check feeds readiness.
 const WRONG_NETWORK = /serves a different network|does not look like a Horizon server/;
 const readiness = { ready: false, reason: 'not checked yet', checkedAt: null };
+try {
+  await verifyHorizonNetwork(cfg.network);
+} catch (e) {
+  fail(`Horizon check failed, the service does not start: ${e instanceof NetworkConfigError ? e.message : String(e)}`);
+}
+readiness.ready = true; readiness.reason = null; readiness.checkedAt = new Date().toISOString();
+log(`event=horizonCheck result=ok network=${cfg.network.networkType}`);
 async function checkHorizon() {
   try {
     await verifyHorizonNetwork(cfg.network);
@@ -71,7 +81,6 @@ async function checkHorizon() {
     log('event=horizonCheck result=failed (readiness reports it; the check runs again)');
   }
 }
-await checkHorizon();
 
 let signerLine = 'signer: none (creation on dial off)';
 if (cfg.createOnDial) {
