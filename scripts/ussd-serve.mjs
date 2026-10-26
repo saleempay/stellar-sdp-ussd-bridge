@@ -69,7 +69,6 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) fail('USSD_PORT must b
 // The live Horizon check gates the start, before any signer module is
 // loaded: every failure is a configuration error here (the capture script
 // does the same). After the start the same check feeds readiness.
-const WRONG_NETWORK = /serves a different network|does not look like a Horizon server/;
 const readiness = { ready: false, reason: 'not checked yet', checkedAt: null };
 try {
   await verifyHorizonNetwork(cfg.network);
