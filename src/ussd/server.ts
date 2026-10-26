@@ -28,6 +28,7 @@ import { join } from 'node:path';
 import { FetchHorizon } from '../provision/horizon.js';
 import { InMemoryPendingStore, JsonFilePendingStore, type PendingCreationStore } from '../provision/pending.js';
 import { USDC_CODE } from '../sdp/facts.js';
+import { ConfigError } from '../sdp/env.js';
 import { NETWORK_ENV, NetworkConfigError, TESTNET_FACTS, TESTNET_NETWORK_TYPE, assertNetwork, type NetworkFacts } from '../sdp/network.js';
 import { loadAccountView } from './accountView.js';
 import { closingLineFromEnv } from './closingLine.js';
@@ -129,6 +130,23 @@ export function ussdConfigFromEnv(env: Record<string, string | undefined>): Ussd
     sponsorPublicKey: env.SPONSOR_PUBLIC_KEY,
     sessionTtlMs: env.USSD_SESSION_TTL_MS ? Number(env.USSD_SESSION_TTL_MS) : undefined,
   };
+}
+
+/**
+ * The adapter's callback path rules, so a service can refuse at boot with
+ * the other configuration (the bridge's ConfigError, exit 2, no stack
+ * trace) instead of inside createUssdServer after the Horizon check and
+ * the signer load. The adapter keeps its own check; the messages name no
+ * path value.
+ */
+export const MIN_CALLBACK_PATH_LENGTH = 12;
+export function assertCallbackPath(callbackPath: string | undefined): void {
+  if (typeof callbackPath !== 'string' || !callbackPath.startsWith('/')) {
+    throw new ConfigError('USSD_CALLBACK_PATH is required and must start with "/": a long random segment (for example /ussd/<32 random chars>), never printed; there is no default');
+  }
+  if (callbackPath.length < MIN_CALLBACK_PATH_LENGTH) {
+    throw new ConfigError(`USSD_CALLBACK_PATH is too short to be unguessable (at least ${MIN_CALLBACK_PATH_LENGTH} characters); use a long random segment`);
+  }
 }
 
 export function createUssdServer(cfg: UssdServerConfig): UssdServer {

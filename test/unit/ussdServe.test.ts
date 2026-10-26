@@ -96,7 +96,7 @@ describe('scripts/ussd-serve.mjs', () => {
     const ready = await fetch(`http://127.0.0.1:${s.port}/ready`);
     expect(ready.status).toBe(200);
     const body = (await ready.json()) as Record<string, unknown>;
-    expect(body).toMatchObject({ ready: true, reason: null, network: 'othernet', createOnDial: false, signer: 'none' });
+    expect(body).toEqual({ ready: true, checkedAt: expect.any(String), networkType: 'othernet' });
     expect(JSON.stringify(body)).not.toContain(CALLBACK);
     const screen = await dial(s.port);
     expect(screen.status).toBe(200);
@@ -178,6 +178,18 @@ describe('scripts/ussd-serve.mjs', () => {
     horizon.set({ passphrase: 'Test SDF Network ; September 2015' });
     expect(await s.exit).toBe(2);
     expect(s.err.join('\n')).toMatch(/after the start, the service stops: .*serves a different network/);
+  });
+
+  it('refuses a short callback path and an empty USSD_PORT at boot with exit code 2, before the Horizon check, with no stack trace', async () => {
+    const horizon = await fakeHorizon('hang'); // reached only if the configuration passed
+    const short = await start({ ...otherNetwork(horizon.url), USSD_CALLBACK_PATH: '/ussd/short' }, { waitForListening: false });
+    expect(await short.exit).toBe(2);
+    expect(short.err.join('\n')).toContain('USSD_CALLBACK_PATH is too short');
+    expect(short.err.join('\n')).not.toContain('/ussd/short');
+    expect(short.err.join('\n')).not.toMatch(/at .*\.(mjs|js):\d+/);
+    const empty = await start({ ...otherNetwork(horizon.url), USSD_PORT: '' }, { waitForListening: false });
+    expect(await empty.exit).toBe(2);
+    expect(empty.err.join('\n')).toContain('USSD_PORT must be a port number');
   });
 
   it('refuses a ready path equal to the callback path, and a bad recheck interval', async () => {

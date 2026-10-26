@@ -303,13 +303,17 @@ code 2 and a message naming which, before the listener opens; the
 orchestrator restarts the task. Once up, the check runs again every
 `USSD_READY_RECHECK_MS` (default 60 seconds) and readiness follows it.
 
-Readiness: `GET` on `USSD_READY_PATH` (default `/ready`) answers 200 with
-`{"ready":true}` while the last Horizon check passed and 503 with
-`{"ready":false,"reason":...}` otherwise; the body also names the network
-type, the time of the last check, and whether creation on dial and a
-signer are on; it never carries the callback path or a secret. Point the
-load balancer's health check at it. Every other request goes to the
-adapter's listener, which answers only the callback path.
+Readiness: `GET` on `USSD_READY_PATH` (default `/ready`) answers 200
+while the last Horizon check passed and the service is not stopping, 503
+otherwise; the body carries `ready`, `checkedAt` and `networkType` only
+(the reason of a failure goes to the log), never the callback path or a
+secret. While not ready, every callback gets E4, the service-down END
+screen, instead of the menu. Point the load balancer's health check at it.
+Every other request goes to the adapter's listener, which answers only the
+callback path. On SIGTERM the endpoint answers 503 at once, the listener
+closes 2 s later with in-flight callbacks completing, and the process
+exits 0; a hard exit at 12 s ends a stop that did not complete with exit
+code 1.
 
 `npm run ussd:capture` remains the sandbox recorder: it starts a tunnel,
 records every request and stops after `--wait-minutes`; it is not a

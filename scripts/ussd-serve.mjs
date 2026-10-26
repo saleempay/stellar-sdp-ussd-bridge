@@ -23,11 +23,10 @@
  * service-down END screen instead of the machine; a passphrase of another
  * network after the start exits with code 2.
  *
- * Readiness: GET USSD_READY_PATH (default /ready) answers 200 with
- * {"ready":true,...} when the last Horizon check passed and 503 with
- * {"ready":false,"reason":...} otherwise; the body carries the network
- * type, the time of the last check and whether creation on dial and a
- * signer are on, never the callback path, never a secret. Every other
+ * Readiness: GET USSD_READY_PATH (default /ready) answers 200 when the
+ * last Horizon check passed and the service is not stopping, 503 otherwise;
+ * the body carries ready, checkedAt and networkType only (the reason of a
+ * failure goes to the log), never the callback path, never a secret. Every other
  * request goes to the adapter's listener, which answers the callback path
  * only (docs/integration-guide.md, "Running the service on a persistent
  * volume, with no signer").
@@ -43,19 +42,23 @@ import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import {
-  ClosingLineError, NetworkConfigError, SignerConfigError, createUssdServer, loadInjectedSigner, selfTestEnabled, sponsorSigning,
-  ussdConfigFromEnv, verifyHorizonNetwork,
+  ClosingLineError, ConfigError, NetworkConfigError, SignerConfigError, assertCallbackPath, createUssdServer, loadInjectedSigner, selfTestEnabled,
+  sponsorSigning, ussdConfigFromEnv, verifyHorizonNetwork,
 } from '../dist/index.js';
 
 const log = (line) => console.log(`${new Date().toISOString()} ${line}`);
 const fail = (message) => { console.error(message); process.exit(2); };
+// the bridge's ConfigError, or the adapter's (code CONFIG_INVALID): a message, no stack trace
+const isConfigError = (e) => e instanceof ConfigError || (e instanceof Error && e.code === 'CONFIG_INVALID');
 
 const fileEnv = existsSync('.env') ? parseEnv(readFileSync('.env', 'utf8')) : {};
 const env = { ...fileEnv, ...process.env };
 
 let cfg;
 try { cfg = ussdConfigFromEnv(env); } catch (e) { if (e instanceof NetworkConfigError || e instanceof ClosingLineError) fail(e.message); throw e; }
-if (!cfg.callbackPath) fail('USSD_CALLBACK_PATH is not set (a long random segment, never printed)');
+// the callback path is validated here with the rest of the configuration,
+// not inside createUssdServer after the Horizon check and the signer load
+try { assertCallbackPath(cfg.callbackPath); } catch (e) { if (isConfigError(e)) fail(e.message); throw e; }
 
 const readyPath = (env.USSD_READY_PATH ?? '/ready').trim() || '/ready';
 if (!readyPath.startsWith('/')) fail('USSD_READY_PATH must start with a slash');
@@ -63,8 +66,9 @@ if (readyPath === cfg.callbackPath) fail('USSD_READY_PATH must differ from USSD_
 const MAX_RECHECK_MS = 3_600_000;
 const recheckMs = Number(env.USSD_READY_RECHECK_MS ?? 60_000);
 if (!Number.isFinite(recheckMs) || recheckMs < 1_000 || recheckMs > MAX_RECHECK_MS) fail(`USSD_READY_RECHECK_MS must be a number of milliseconds, at least 1000 and at most ${MAX_RECHECK_MS}`);
-const port = Number(env.USSD_PORT ?? 8085);
-if (!Number.isInteger(port) || port < 0 || port > 65_535) fail('USSD_PORT must be a port number');
+const portText = (env.USSD_PORT ?? '8085').trim();
+const port = portText === '' ? NaN : Number(portText);
+if (!Number.isInteger(port) || port < 0 || port > 65_535) fail('USSD_PORT must be a port number (an empty value is refused)');
 
 // The live Horizon check gates the start, before any signer module is
 // loaded: every failure is a configuration error here (the capture script
@@ -105,18 +109,14 @@ if (cfg.createOnDial) {
 }
 
 let stopping = false;
-const { listener } = createUssdServer({ ...cfg, log, ready: () => readiness.ready });
+let listener;
+try { ({ listener } = createUssdServer({ ...cfg, log, ready: () => readiness.ready })); } catch (e) { if (isConfigError(e)) fail(e.message); throw e; }
 
 const server = createServer((req, res) => {
   if (req.method === 'GET' && (req.url ?? '').split('?')[0] === readyPath) {
-    const body = JSON.stringify({
-      ready: readiness.ready && !stopping,
-      reason: readiness.reason,
-      checkedAt: readiness.checkedAt,
-      network: cfg.network.networkType,
-      createOnDial: cfg.createOnDial,
-      signer: cfg.createOnDial ? (cfg.signer ? 'loaded' : 'reference') : 'none',
-    });
+    // a terse public body: ready, the time of the last check and the network
+    // type; the reason, the signer and creation on dial stay in the log
+    const body = JSON.stringify({ ready: readiness.ready && !stopping, checkedAt: readiness.checkedAt, networkType: cfg.network.networkType });
     res.writeHead(readiness.ready && !stopping ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(body);
     return;
@@ -137,7 +137,7 @@ scheduleRecheck();
 server.listen(port, '0.0.0.0', () => {
   const address = server.address();
   const bound = typeof address === 'object' && address ? address.port : port;
-  log(`event=listening port=${bound} readyPath=${readyPath} network=${cfg.network.networkType} dataDir=${cfg.dataDir ?? '(memory)'} createOnDial=${cfg.createOnDial ? 'on' : 'off'} callbackPath=set(${cfg.callbackPath.length} chars, masked)`);
+  log(`event=listening port=${bound} readyPath=${readyPath} network=${cfg.network.networkType} dataDir=${cfg.dataDir} createOnDial=${cfg.createOnDial ? 'on' : 'off'} callbackPath=set(${cfg.callbackPath.length} chars, masked)`);
   log(signerLine);
   log(`event=ready value=${readiness.ready}`);
 });
